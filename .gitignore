@@ -1,0 +1,41 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.fleet/
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+**/build/
+
+# Android
+**/local.properties
+**/captures/
+**/.externalNativeBuild/
+**/.cxx/
+*.apk
+*.aab
+*.apks
+
+# iOS / Xcode
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+DerivedData/
+Pods/
+*.xcworkspace/
+
+# JS (Kotlin/JS)
+node_modules/
+kotlin-js-store/
+
+# Secrets / keys
+*.jks
+*.keystore
+*.gpg

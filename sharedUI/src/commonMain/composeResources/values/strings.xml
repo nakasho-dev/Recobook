@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Recobook</string>
+    <string name="title_tagline">Your shelf, cataloged.</string>
+    <string name="isbn_hint">ISBN (10 or 13)</string>
+    <string name="search">Search</string>
+    <string name="searching">Searching...</string>
+    <string name="scan">Scan</string>
+    <string name="empty_state">No books yet. Add one by ISBN.</string>
+    <string name="remove">Remove</string>
+    <string name="theme">Theme</string>
+</resources>
