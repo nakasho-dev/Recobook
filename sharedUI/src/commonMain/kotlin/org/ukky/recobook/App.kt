@@ -1,6 +1,7 @@
 package org.ukky.recobook
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -36,16 +39,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -140,6 +149,7 @@ fun App(
                         books = books,
                         imageLoader = imageLoader,
                         onRemove = { book -> coroutineScope.launch { repository.removeById(book.id) } },
+                        onReorder = { from, to -> coroutineScope.launch { repository.reorderBooks(from, to) } },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -268,15 +278,88 @@ private fun BookList(
     books: List<Book>,
     imageLoader: ImageLoader,
     onRemove: (Book) -> Unit,
+    onReorder: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val sortedBooks = remember(books) { books.sortedByDescending { it.addedAt } }
+    // ドラッグ&ドロップ中の視覚的フィードバック用ローカルリスト
+    val dragItems = remember { mutableStateListOf<Book>() }
+    var isDragging by remember { mutableStateOf(false) }
+    var dragStartIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOriginalItems by remember { mutableStateOf<List<Book>>(emptyList()) }
+
+    // ハプティックフィードバック（recomposition をまたいで最新値を保持）
+    val hapticFeedback = rememberUpdatedState(LocalHapticFeedback.current)
+
+    // ドラッグ中でない時のみストアと同期する
+    LaunchedEffect(books) {
+        if (!isDragging) {
+            dragItems.clear()
+            dragItems.addAll(books)
+        }
+    }
+
+    val lazyListState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    val dragDropState = remember(lazyListState, scope) {
+        DragDropState(
+            lazyListState = lazyListState,
+            scope = scope,
+            onMove = { from, to ->
+                dragItems.apply { add(to, removeAt(from)) }
+            },
+        )
+    }
+
     LazyColumn(
-        modifier = modifier.fillMaxWidth(),
+        state = lazyListState,
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(dragDropState) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        // 長押しが確定した瞬間にハプティックを発火
+                        hapticFeedback.value.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val info = lazyListState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { offset.y.toInt() in it.offset..(it.offset + it.size) }
+                        dragStartIndex = info?.index
+                        dragOriginalItems = dragItems.toList()
+                        dragDropState.onDragStart(offset)
+                        isDragging = true
+                    },
+                    onDrag = { change, delta ->
+                        change.consume()
+                        dragDropState.onDrag(delta)
+                    },
+                    onDragEnd = {
+                        val startIdx = dragStartIndex
+                        val endIdx = dragDropState.draggingItemIndex
+                        if (startIdx != null && endIdx != null && startIdx != endIdx) {
+                            scope.launch { onReorder(startIdx, endIdx) }
+                        }
+                        dragDropState.onDragEnd()
+                        isDragging = false
+                        dragStartIndex = null
+                    },
+                    onDragCancel = {
+                        // キャンセル時はローカルリストをドラッグ開始前の状態に戻す
+                        dragItems.clear()
+                        dragItems.addAll(dragOriginalItems)
+                        dragDropState.onDragCancel()
+                        isDragging = false
+                        dragStartIndex = null
+                    },
+                )
+            },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(sortedBooks, key = { it.id }) { book ->
-            BookCard(book = book, imageLoader = imageLoader, onRemove = { onRemove(book) })
+        itemsIndexed(dragItems, key = { _, book -> book.id }) { index, book ->
+            BookCard(
+                book = book,
+                imageLoader = imageLoader,
+                onRemove = { onRemove(book) },
+                modifier = Modifier.draggableItem(dragDropState, index),
+            )
         }
     }
 }
@@ -286,8 +369,10 @@ private fun BookCard(
     book: Book,
     imageLoader: ImageLoader,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Card(
+        modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
@@ -295,10 +380,11 @@ private fun BookCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(start = 8.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            DragHandleIcon()
             if (book.thumbnailUrl != null) {
                 AsyncImage(
                     model = book.thumbnailUrl,
@@ -354,6 +440,31 @@ private fun BookCard(
             }
             TextButton(onClick = onRemove) {
                 Text(stringResource(Res.string.remove))
+            }
+        }
+    }
+}
+
+/** 2 × 3 ドットのドラッグハンドルアイコン */
+@Composable
+private fun DragHandleIcon(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.size(width = 16.dp, height = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        repeat(3) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(2) {
+                    Box(
+                        Modifier
+                            .size(4.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                shape = CircleShape,
+                            ),
+                    )
+                }
             }
         }
     }

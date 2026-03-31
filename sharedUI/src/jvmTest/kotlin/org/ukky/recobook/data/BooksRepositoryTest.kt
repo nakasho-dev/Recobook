@@ -188,6 +188,152 @@ class BooksRepositoryTest {
         assertEquals("id-1", books[0].id)
     }
 
+    // --- reorderBooks ---
+
+    @Test
+    fun reorderBooks_moveForward_itemAtCorrectPosition() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+            Book(id = "id-3", isbn = "isbn-3", title = "本3"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 0, toIndex = 2)
+
+        val books = repo.books.first()
+        assertEquals(3, books.size)
+        assertEquals("id-2", books[0].id)
+        assertEquals("id-3", books[1].id)
+        assertEquals("id-1", books[2].id)
+    }
+
+    @Test
+    fun reorderBooks_moveBackward_itemAtCorrectPosition() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+            Book(id = "id-3", isbn = "isbn-3", title = "本3"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 2, toIndex = 0)
+
+        val books = repo.books.first()
+        assertEquals(3, books.size)
+        assertEquals("id-3", books[0].id)
+        assertEquals("id-1", books[1].id)
+        assertEquals("id-2", books[2].id)
+    }
+
+    @Test
+    fun reorderBooks_adjacentItems_swapped() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 0, toIndex = 1)
+
+        val books = repo.books.first()
+        assertEquals(2, books.size)
+        assertEquals("id-2", books[0].id)
+        assertEquals("id-1", books[1].id)
+    }
+
+    @Test
+    fun reorderBooks_sameIndex_collectionUnchanged() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 0, toIndex = 0)
+
+        val books = repo.books.first()
+        assertEquals("id-1", books[0].id)
+        assertEquals("id-2", books[1].id)
+    }
+
+    @Test
+    fun reorderBooks_outOfBoundsToIndex_collectionUnchanged() = runTest {
+        val store = newStore()
+        val originals = listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+        )
+        store.set(BookCollection(originals))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 0, toIndex = 5)
+
+        val books = repo.books.first()
+        assertEquals("id-1", books[0].id)
+        assertEquals("id-2", books[1].id)
+    }
+
+    @Test
+    fun reorderBooks_negativeFromIndex_collectionUnchanged() = runTest {
+        val store = newStore()
+        val originals = listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+            Book(id = "id-2", isbn = "isbn-2", title = "本2"),
+        )
+        store.set(BookCollection(originals))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = -1, toIndex = 1)
+
+        val books = repo.books.first()
+        assertEquals("id-1", books[0].id)
+        assertEquals("id-2", books[1].id)
+    }
+
+    @Test
+    fun reorderBooks_singleItem_collectionUnchanged() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        repo.reorderBooks(fromIndex = 0, toIndex = 0)
+
+        val books = repo.books.first()
+        assertEquals(1, books.size)
+        assertEquals("id-1", books[0].id)
+    }
+
+    @Test
+    fun reorderBooks_multipleSequentialMoves_finalOrderCorrect() = runTest {
+        val store = newStore()
+        store.set(BookCollection(listOf(
+            Book(id = "id-A", isbn = "isbn-A", title = "A"),
+            Book(id = "id-B", isbn = "isbn-B", title = "B"),
+            Book(id = "id-C", isbn = "isbn-C", title = "C"),
+            Book(id = "id-D", isbn = "isbn-D", title = "D"),
+        )))
+
+        val repo = BooksRepository(store, mockApi())
+        // A を末尾へ: [A,B,C,D] → [B,C,D,A]
+        repo.reorderBooks(fromIndex = 0, toIndex = 3)
+        // D を先頭へ: [B,C,D,A] → [A,B,C,D] ではなく D=idx2 → 0: [D,B,C,A]
+        // (元の store は [B,C,D,A])
+        repo.reorderBooks(fromIndex = 2, toIndex = 0)
+
+        val books = repo.books.first()
+        assertEquals("id-D", books[0].id)
+        assertEquals("id-B", books[1].id)
+        assertEquals("id-C", books[2].id)
+        assertEquals("id-A", books[3].id)
+    }
+
     companion object {
         val SINGLE_BOOK_JSON = """
             {

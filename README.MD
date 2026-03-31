@@ -3,6 +3,14 @@
 ISBN を入力またはバーコードスキャンで書籍を検索・登録できる読書記録アプリです。  
 Kotlin Multiplatform + Compose Multiplatform で Android / iOS / Desktop / Web に対応しています。
 
+## 主な機能
+
+- **ISBN 入力 / バーコードスキャン**（Android）で書籍を検索・登録
+- **Google Books API** から書影・著者・出版社などのメタデータを自動取得
+- **長押しドラッグで並べ替え** — ホーム画面で書籍カードの左端ハンドルを長押しして上下にドラッグ。長押し確定時にハプティックフィードバックを発生
+- **ライト / ダークテーマ**を手動切替
+- **ローカル保存**（JSON）— 端末内のみ、ネットワーク同期なし
+
 ## 動作環境
 
 | ツール | バージョン |
@@ -123,12 +131,26 @@ iosApp/iosApp.xcodeproj
 ## テスト
 
 ```bash
-# JVM テスト（共通ロジック・API・Repository）
+# JVM テスト（共通ロジック・API・Repository・並べ替え）
 ./gradlew :sharedUI:jvmTest
 
 # iOS テスト（iOS シミュレーターが必要）
 ./gradlew :sharedUI:iosSimulatorArm64Test
 ```
+
+### テスト構成
+
+| テストクラス | 対象 | ソース |
+|---|---|---|
+| `IsbnUtilsTest` | ISBN 正規化・バリデーション | `commonTest` |
+| `BooksApiTest` | Google Books API レスポンス解析 | `commonTest` |
+| `BooksRepositoryTest` | 書籍追加・削除・**並べ替え** | `jvmTest` |
+| `DragDropStateTest` | ドラッグ状態管理（初期値・onDragEnd・onDragCancel など）| `jvmTest` |
+| `BookStoreProviderJvmTest` | Desktop ストレージパス | `jvmTest` |
+| `BookStoreProviderIosTest` | iOS ストレージパス | `iosTest` |
+
+> **ハプティックフィードバックについて**  
+> ハプティック発火（`LocalHapticFeedback.performHapticFeedback`）は UI レイヤーの副作用のため、実機 / シミュレーター上で手動確認する。
 
 ---
 

@@ -53,4 +53,23 @@ class BooksRepository(
             BookCollection(items.filterNot { it.id == bookId })
         }
     }
+
+    /**
+     * [fromIndex] 位置のアイテムを [toIndex] 位置に移動する。
+     * インデックスが範囲外の場合やインデックスが同一の場合は何もしない。
+     */
+    suspend fun reorderBooks(fromIndex: Int, toIndex: Int) {
+        store.update { current ->
+            val items = current?.items.orEmpty().toMutableList()
+            if (fromIndex == toIndex ||
+                fromIndex !in items.indices ||
+                toIndex !in items.indices
+            ) {
+                return@update current
+            }
+            val item = items.removeAt(fromIndex)
+            items.add(toIndex, item)
+            BookCollection(items)
+        }
+    }
 }

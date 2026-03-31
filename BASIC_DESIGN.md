@@ -1,7 +1,7 @@
 # Recobook 基本設計書
 
-**バージョン**: 1.0.0  
-**最終更新**: 2026-03-31  
+**バージョン**: 1.2.0  
+**最終更新**: 2026-04-01  
 **対象プロジェクト**: [Recobook](./README.MD)
 
 ---
@@ -16,6 +16,7 @@
 6. [データ設計](#6-データ設計)
 7. [セキュリティ設計](#7-セキュリティ設計)
 8. [Google Play ストアポリシー上の注意点](#8-google-play-ストアポリシー上の注意点)
+9. [シーケンス図](#9-シーケンス図)
 
 ---
 
@@ -98,13 +99,13 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 ├─────────────────────────────────────┤
 │  ─────────────────────────────────  │  ← HorizontalDivider
 │                                     │
-│  ┌───┬────────────────────┬──────┐  │
-│  │📖 │ タイトル           │Remove│  │  ← BookCard（登録あり時）
-│  │   │ 著者               │      │  │
-│  │   │ 出版社 • 出版日    │      │  │
-│  │   │ ISBN XXXXXXXXXX    │      │  │
-│  └───┴────────────────────┴──────┘  │
-│  （以下 LazyColumn でスクロール）    │
+│  ┌──┬───┬────────────────────┬────┐  │
+│  │⠿⠿│📖 │ タイトル           │Rem │  │  ← BookCard（登録あり時）
+│  │  │   │ 著者               │ove │  │     ⠿⠿ = ドラッグハンドル
+│  │  │   │ 出版社 • 出版日    │    │  │
+│  │  │   │ ISBN XXXXXXXXXX    │    │  │
+│  └──┴───┴────────────────────┴────┘  │
+│  （以下 LazyColumn で長押しドラッグ） │
 │                                     │
 │  No books yet. Add one by ISBN.     │  ← EmptyState（登録なし時）
 └─────────────────────────────────────┘
@@ -119,8 +120,8 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | Scan ボタン | バーコードカメラ起動 | `IsbnScanner.isAvailable == true`（Android のみ） |
 | 検索ボタン | ローディングインジケーター兼用 | 常時表示（検索中は `CircularProgressIndicator` に切替） |
 | `EmptyState` | 未登録時のプレースホルダー | `books.isEmpty()` のとき |
-| `BookList` | 登録書籍一覧（`addedAt` 降順） | `books.isNotEmpty()` のとき |
-| `BookCard` | 書影・タイトル・著者・出版社・出版日・ISBN・削除ボタン | 各書籍エントリ |
+| `BookList` | 登録書籍一覧（ストア保存順・手動並べ替え可能） | `books.isNotEmpty()` のとき |
+| `BookCard` | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN・削除ボタン | 各書籍エントリ |
 | Snackbar | 操作結果メッセージ | 検索・追加・更新・エラー時 |
 
 #### Snackbar メッセージ一覧
@@ -162,10 +163,12 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 
 | # | 機能 | 説明 |
 |---|---|---|
-| F-11 | 書籍一覧表示 | 登録日時（`addedAt`）降順で表示 |
-| F-12 | 書籍カード表示 | 書影・タイトル・著者・出版社・出版日・ISBN を表示。書影がない場合は「No Cover」プレースホルダーを表示 |
+| F-11 | 書籍一覧表示 | ストアに保存された順序で表示（初期は登録日時降順、手動並べ替え後はその順序を維持） |
+| F-12 | 書籍カード表示 | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN を表示。書影がない場合は「No Cover」プレースホルダーを表示 |
 | F-13 | 書籍削除 | `id` を指定してコレクションから削除 |
 | F-14 | 空状態表示 | 書籍未登録時にガイドメッセージを表示 |
+| F-21 | 書籍並べ替え | `BookCard` の左端ドラッグハンドルを長押しして上下ドラッグで順序変更。変更はストアに永続化される |
+| F-22 | 長押し時ハプティックフィードバック | 長押しが確定してドラッグ可能になった瞬間に振動フィードバックを発生させる。Android は `HapticFeedbackConstants.LONG_PRESS`、iOS は `UIImpactFeedbackGenerator(style: medium)` を使用。Desktop / Web は no-op |
 
 ### 4.4 表示・テーマ
 
@@ -195,8 +198,9 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │  App.kt（Compose UI）                                     │
 │  ├── HeaderRow        テーマ切替                          │
 │  ├── IsbnInputCard    ISBN 入力・スキャン起動              │
-│  ├── BookList         書籍一覧（LazyColumn）              │
-│  ├── BookCard         書籍カード 1 件                     │
+│  ├── BookList         書籍一覧（LazyColumn + ドラッグ）   │
+│  ├── BookCard         書籍カード 1 件 + ドラッグハンドル  │
+│  ├── DragHandleIcon   2×3 ドットのドラッグ操作ガイド      │
 │  └── EmptyState       未登録時プレースホルダー            │
 └────────────────────────┬─────────────────────────────────┘
                          │ Flow / suspend fun
@@ -205,7 +209,8 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │  BooksRepository                                          │
 │  ├── books: Flow<List<Book>>    書籍一覧ストリーム        │
 │  ├── addByIsbn(isbn)            検索・追加・更新          │
-│  └── removeById(id)             削除                      │
+│  ├── removeById(id)             削除                      │
+│  └── reorderBooks(from, to)     並べ替え                  │
 └──────────────┬────────────────────────┬──────────────────┘
                │ suspend fun            │ KStore API
 ┌──────────────▼──────────┐  ┌─────────▼────────────────────┐
@@ -257,17 +262,24 @@ Recobook/
 
 UI 状態は Compose の `remember` / `mutableStateOf` で管理する。永続データは `KStore.updates` が返す `Flow<BookCollection?>` を `collectAsState` で購読し、自動的に UI へ反映される。
 
+ドラッグ&ドロップ並べ替えでは、`BookList` がローカルの `SnapshotStateList<Book>` を保持し、ドラッグ操作中は即座にローカルリストを更新することで視覚的フィードバックを実現する。ドラッグ終了時に `BooksRepository.reorderBooks` を呼び出してストアへ永続化する。
+
 ```
 KStore.updates (Flow)
        │
        ▼ map { it?.items.orEmpty() }
-BooksRepository.books (Flow<List<Book>>)
+BooksRepository.books (Flow<List<Book>>)（ストア保存順）
        │
        ▼ collectAsState(emptyList())
 App composable の books 変数（State<List<Book>>）
        │
-       ▼ 再コンポーズ
-BookList / EmptyState
+       ▼ LaunchedEffect(books)（ドラッグ中は同期スキップ）
+BookList の dragItems (SnapshotStateList<Book>)
+       │
+       ├── ドラッグ中: onMove で即時並べ替え（ローカルのみ）
+       │                    ↓ ドラッグ終了
+       │              reorderBooks(from, to) → KStore 永続化
+       └── 通常時: books と同期
 ```
 
 ---
@@ -288,7 +300,7 @@ BookList / EmptyState
 
 | フィールド | 型 | 説明 |
 |---|---|---|
-| `items` | `List<Book>` | 登録書籍のリスト（順序は登録日時降順で UI 側がソート） |
+| `items` | `List<Book>` | 登録書籍のリスト。**リストの順序が表示順**となる。新規追加時は先頭に挿入され、並べ替え後はその順序を維持する |
 
 #### Book（書籍エントリ）
 
@@ -493,40 +505,40 @@ sequenceDiagram
 
         App->>Repo: addByIsbn(normalized)
         Repo->>Api: fetchByIsbn(isbn)
-        Api->>GBooks: GET /books/v1/volumes<br/>?q=isbn:{isbn}&maxResults=1
+        Api->>GBooks: GET /books/v1/volumes?q=isbn:ISBN&maxResults=1
 
         alt 書籍あり（totalItems ≥ 1）
             GBooks-->>Api: 200 OK (VolumeResponse JSON)
             Api->>Api: toBook(fallbackIsbn)<br/>・ISBN-13 を正規 ISBN として優先採用<br/>・thumbnail: http:// → https:// に変換
             Api-->>Repo: Book
 
-            Repo->>Store: store.update { current → newCollection }
+            Repo->>Store: store.update（重複チェック → 新コレクション生成）
             Note over Repo,Store: 重複チェック（優先順）<br/>① id 一致<br/>② isbn13 一致（双方非 null）<br/>③ isbn10 一致（双方非 null）<br/>④ isbn 一致
 
             alt 新規書籍（重複なし）
                 Store-->>Repo: BookCollection（リスト先頭に Book を追加）
-                Repo-->>App: BookAddResult.Success(book, updated=false)
+                Repo-->>App: BookAddResult.Success（new）
                 App-->>User: Snackbar: "Added to your shelf."
             else 既存書籍（重複あり）
                 Store-->>Repo: BookCollection（同位置でメタデータ上書き・addedAt 保持）
-                Repo-->>App: BookAddResult.Success(book, updated=true)
+                Repo-->>App: BookAddResult.Success（updated）
                 App-->>User: Snackbar: "Updated existing entry."
             end
 
             Store-)App: KStore.updates が新しい BookCollection を emit（非同期 Flow）
-            App->>App: books: State<List<Book>> 更新
-            App->>App: BookList を addedAt 降順で再コンポーズ
+            App->>App: books (State) 更新
+            App->>App: BookList をストア保存順で再コンポーズ
 
         else 書籍なし（totalItems = 0）
             GBooks-->>Api: 200 OK（items: []）
             Api-->>Repo: null
-            Repo-->>App: BookAddResult.NotFound(isbn)
+            Repo-->>App: BookAddResult.NotFound（isbn）
             App-->>User: Snackbar: "No book found for that ISBN."
 
         else 通信エラー / タイムアウト / 例外
             GBooks--xApi: エラーレスポンス / タイムアウト
             Api-->>Repo: Exception をスロー
-            Repo-->>App: BookAddResult.Error(isbn, message)
+            Repo-->>App: BookAddResult.Error（isbn / message）
             App-->>User: Snackbar: エラーメッセージ
         end
 
@@ -542,4 +554,69 @@ sequenceDiagram
 | **`isLoading` の制御タイミング** | バリデーションエラーの場合は `isLoading = true` に**ならない**。検索ボタンは常に有効なまま |
 | **`isLoading ← false` の保証** | `finally` ブロックで実行されるため、API 成功・404・例外のいずれの場合でも必ずリセットされる |
 | **UI 反映の非同期性** | `store.update` 完了後、`KStore.updates` Flow の emit はストレージ書き込みが完了してから行われる。`-)` 矢印で非同期通知を表している |
-| **重複時の位置保持** | 更新時はリスト内の**既存インデックスを維持**する。先頭への移動は行わないため、`addedAt` による表示順は変化しない |
+| **重複時の位置保持** | 更新時はリスト内の**既存インデックスを維持**する。先頭への移動は行わないため、手動並べ替えによる表示順は変化しない |
+
+---
+
+### 9.2 書籍並べ替え（ドラッグ&ドロップ）
+
+長押しドラッグによる並べ替えの流れを示す。ローカル状態による即時フィードバックと、ドラッグ終了後のストア永続化の 2 段階で処理される。
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as BookList<br/>(Compose UI)
+    participant State as DragDropState
+    participant Local as dragItems<br/>(SnapshotStateList)
+    participant Repo as BooksRepository
+    participant Store as KStore
+
+    User->>App: ドラッグハンドルを長押し
+    App->>App: HapticFeedback.performHapticFeedback(LongPress)
+    Note right of App: Android: HapticFeedbackConstants.LONG_PRESS<br/>iOS: UIImpactFeedbackGenerator(medium)<br/>Desktop/Web: no-op
+    App->>State: onDragStart(touchOffset)
+    State->>State: draggingItemIndex ← 対象のインデックス
+
+    loop ドラッグ移動中
+        User->>App: 指を上下に移動
+        App->>State: onDrag(delta)
+        State->>State: draggingItemDelta += delta.y
+        Note over State: 中心点が別アイテムを越えたとき
+        State->>State: onMove(fromIndex → toIndex)
+        State->>Local: removeAt(from) → add(to)
+        Local-->>App: SnapshotStateList 更新 → 即時再コンポーズ
+        App-->>User: カードが視覚的に移動して見える
+    end
+
+    alt 正常にドラッグ終了
+        User->>App: 指を離す
+        App->>State: onDragEnd()
+        State->>State: draggingItemIndex ← null
+
+        alt 開始位置 ≠ 終了位置
+            App->>Repo: reorderBooks(startIndex → endIndex)
+            Repo->>Store: store.update（from 位置 → to 位置へ移動）
+            Store-->>Repo: BookCollection（新順序）
+            Store-)App: KStore.updates emit（非同期 Flow）
+            App->>Local: LaunchedEffect により dragItems を books と同期
+        else 同じ位置に戻した場合
+            Note over App: reorderBooks を呼ばない（変化なし）
+        end
+    else ドラッグキャンセル（システム割込み等）
+        App->>State: onDragCancel()
+        App->>Local: dragItems ← dragOriginalItems（ドラッグ開始前の状態に戻す）
+        App-->>User: 元の順序に戻る
+    end
+```
+
+#### 並べ替えフロー補足
+
+| ポイント | 説明 |
+|---|---|
+| **2 段階更新** | ①ローカル `dragItems` を即時更新（視覚フィードバック）→ ②ドラッグ終了時に `reorderBooks` でストア永続化 |
+| **ハプティック発火タイミング** | `detectDragGesturesAfterLongPress` の `onDragStart` コールバック先頭で発火。長押し判定が完了した瞬間（ドラッグ可能になった瞬間）に 1 回だけ振動する |
+| **ハプティック実装** | `LocalHapticFeedback.current.performHapticFeedback(HapticFeedbackType.LongPress)` を使用。Compose Multiplatform が各プラットフォーム API に委譲する。`rememberUpdatedState` でラップし recomposition 間でも最新値を参照する |
+| **ドラッグ中は同期スキップ** | `LaunchedEffect(books)` は `isDragging == true` の間は `dragItems` を上書きしない |
+| **キャンセル時の復元** | ドラッグ開始時に `dragOriginalItems` を保存しておき、キャンセル時はこれを使って復元する |
+| **インデックスの整合性** | `startIndex` と `endIndex` はいずれも**ドラッグ開始時のストア順**に基づく。中間スワップはすべてローカルのみで行われるため、最終的な `reorderBooks(start, end)` 呼び出しでストアと整合する |
+| **自動スクロール** | ドラッグ位置がリスト端に達すると `lazyListState.scrollBy` で自動スクロールする |
