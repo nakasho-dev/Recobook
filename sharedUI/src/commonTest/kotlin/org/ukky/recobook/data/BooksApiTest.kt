@@ -1,21 +1,13 @@
 package org.ukky.recobook.data
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
-import io.ktor.serialization.kotlinx.json.json
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class BooksApiTest {
 
@@ -52,6 +44,33 @@ class BooksApiTest {
     fun fetchByIsbn_noItems_returnsNull() = runTest {
         val book = createApi(EMPTY_RESPONSE_JSON).fetchByIsbn("0000000000000")
         assertNull(book)
+    }
+
+    @Test
+    fun fetchByIsbn_sendsGoogleBooksQueryWithMaxResultsOne() = runTest {
+        var requestedPath = ""
+        var requestedIsbnQuery: String? = null
+        var requestedMaxResults: String? = null
+        val engine = MockEngine { request ->
+            requestedPath = request.url.encodedPath
+            requestedIsbnQuery = request.url.parameters["q"]
+            requestedMaxResults = request.url.parameters["maxResults"]
+            respond(
+                content = SINGLE_BOOK_JSON,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val client = HttpClient(engine) {
+            install(ContentNegotiation) { json(testJson) }
+        }
+
+        val book = BooksApi(client).fetchByIsbn("9784873119038")
+
+        assertNotNull(book)
+        assertEquals("/books/v1/volumes", requestedPath)
+        assertEquals("isbn:9784873119038", requestedIsbnQuery)
+        assertEquals("1", requestedMaxResults)
     }
 
     // --- ISBN フィールドのマッピング ---
@@ -98,6 +117,13 @@ class BooksApiTest {
         val book = createApi(NO_THUMBNAIL_JSON).fetchByIsbn("9784873119038")
         assertNotNull(book)
         assertNull(book.thumbnailUrl)
+    }
+
+    @Test
+    fun fetchByIsbn_thumbnailMissing_usesSmallThumbnailWithHttps() = runTest {
+        val book = createApi(SMALL_THUMBNAIL_ONLY_JSON).fetchByIsbn("9784873119038")
+        assertNotNull(book)
+        assertEquals("https://books.google.com/books?id=test&zoom=5", book.thumbnailUrl)
     }
 
     // --- タイトル ---
@@ -214,6 +240,26 @@ class BooksApiTest {
                     "industryIdentifiers": [
                       {"type": "ISBN_13", "identifier": "9784873119038"}
                     ]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val SMALL_THUMBNAIL_ONLY_JSON = """
+            {
+              "totalItems": 1,
+              "items": [
+                {
+                  "id": "vol-id",
+                  "volumeInfo": {
+                    "title": "smallThumbnailのみの本",
+                    "industryIdentifiers": [
+                      {"type": "ISBN_13", "identifier": "9784873119038"}
+                    ],
+                    "imageLinks": {
+                      "smallThumbnail": "http://books.google.com/books?id=test&zoom=5"
+                    }
                   }
                 }
               ]

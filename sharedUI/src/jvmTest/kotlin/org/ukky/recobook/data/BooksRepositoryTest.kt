@@ -1,26 +1,16 @@
 package org.ukky.recobook.data
 
 import io.github.xxfast.kstore.file.storeOf
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
-import io.ktor.serialization.kotlinx.json.json
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
 import kotlinx.serialization.json.Json
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class BooksRepositoryTest {
 
@@ -135,6 +125,33 @@ class BooksRepositoryTest {
         assertIs<BookAddResult.Success>(result)
         assertTrue(result.updated)
         assertEquals(1, repo.books.first().size)
+    }
+
+    @Test
+    fun addByIsbn_duplicateByCanonicalIsbn_updatesInPlaceAndPreservesAddedAt() = runTest {
+        val store = newStore()
+        val originalAddedAt = 12345L
+        store.set(BookCollection(listOf(
+            Book(id = "first", isbn = "first-isbn", title = "先頭の本"),
+            Book(
+                id = "other-id",
+                isbn = "9784873119038",
+                title = "旧タイトル",
+                addedAt = originalAddedAt,
+            ),
+        )))
+
+        val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
+        val result = repo.addByIsbn("9784873119038")
+
+        assertIs<BookAddResult.Success>(result)
+        assertTrue(result.updated)
+        val books = repo.books.first()
+        assertEquals(2, books.size)
+        assertEquals("first", books[0].id)
+        assertEquals("test-vol-id", books[1].id)
+        assertEquals("テスト書籍", books[1].title)
+        assertEquals(originalAddedAt, books[1].addedAt)
     }
 
     // --- addByIsbn エラーケース ---
