@@ -10,6 +10,12 @@ dependencies {
     implementation(project(":sharedUI"))
 }
 
+tasks.withType<JavaExec>().configureEach {
+    if (name == "run") {
+        jvmArgs("-Drecobook.debug=true")
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "MainKt"

@@ -1,7 +1,7 @@
 # Recobook 基本設計書
 
 **バージョン**: 1.2.0  
-**最終更新**: 2026-04-01  
+**最終更新**: 2026-05-31  
 **対象プロジェクト**: [Recobook](../README.MD)
 
 ---
@@ -381,11 +381,15 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 
 ### 7.4 ネットワーク通信
 
-外部通信先は Google Books API のみ。
+外部通信先は Google Books API と、Google Books API が返す書影 URL のみ。
 
 | エンドポイント | 用途 | 認証 |
 |---|---|---|
 | `https://www.googleapis.com/books/v1/volumes` | ISBN による書籍検索 | 不要（公開 API） |
+
+書影表示時は、Google Books API のレスポンスに含まれる HTTPS のサムネイル URL に対して追加の GET リクエストを行う。
+
+デバッグ環境では HTTP 通信ログを各プラットフォーム標準ログへ出力する。ログ出力先は Android が Logcat、iOS が NSLog、Desktop が標準出力、Web がブラウザコンソールで、リリース相当環境では無効とする。
 
 その他の外部通信は存在しない。広告 SDK・アナリティクス SDK は一切組み込んでいない。
 

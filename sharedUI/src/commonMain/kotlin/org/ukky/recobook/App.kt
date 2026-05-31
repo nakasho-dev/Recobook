@@ -2,20 +2,7 @@ package org.ukky.recobook
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,31 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ElevatedButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,19 +29,12 @@ import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.network.ktor3.KtorNetworkFetcherFactory
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.stringResource
-import org.ukky.recobook.data.Book
-import org.ukky.recobook.data.BookAddResult
-import org.ukky.recobook.data.BooksApi
-import org.ukky.recobook.data.BooksRepository
-import org.ukky.recobook.data.isIsbnLengthValid
-import org.ukky.recobook.data.normalizeIsbn
+import org.ukky.recobook.data.*
+import org.ukky.recobook.network.createRecobookHttpClient
 import org.ukky.recobook.storage.createBookStore
 import org.ukky.recobook.theme.AppTheme
 import org.ukky.recobook.theme.LocalThemeIsDark
@@ -88,8 +45,9 @@ import recobook.sharedui.generated.resources.*
 fun App(
     onThemeChanged: @Composable (isDark: Boolean) -> Unit = {},
 ) = AppTheme(onThemeChanged) {
-    val repository = rememberBooksRepository()
-    val imageLoader = rememberImageLoader()
+    val httpClient = rememberAppHttpClient()
+    val repository = rememberBooksRepository(httpClient)
+    val imageLoader = rememberImageLoader(httpClient)
     val books by repository.books.collectAsState(emptyList())
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -471,33 +429,32 @@ private fun DragHandleIcon(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun rememberBooksRepository(): BooksRepository {
+private fun rememberAppHttpClient(): io.ktor.client.HttpClient {
     val json = remember {
         Json {
             ignoreUnknownKeys = true
             isLenient = true
         }
     }
-    val client = remember {
-        HttpClient {
-            install(ContentNegotiation) {
-                json(json)
-            }
-        }
-    }
+    val client = remember { createRecobookHttpClient(json) }
     DisposableEffect(Unit) {
         onDispose { client.close() }
     }
-    val store = remember { createBookStore() }
-    return remember { BooksRepository(store, BooksApi(client)) }
+    return client
 }
 
 @Composable
-private fun rememberImageLoader(): ImageLoader {
+private fun rememberBooksRepository(client: io.ktor.client.HttpClient): BooksRepository {
+    val store = remember { createBookStore() }
+    return remember(client, store) { BooksRepository(store, BooksApi(client)) }
+}
+
+@Composable
+private fun rememberImageLoader(client: io.ktor.client.HttpClient): ImageLoader {
     val context = LocalPlatformContext.current
-    val loader = remember(context) {
+    val loader = remember(context, client) {
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory()) }
+            .components { add(KtorNetworkFetcherFactory(client)) }
             .build()
     }
     DisposableEffect(loader) {

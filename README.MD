@@ -7,6 +7,7 @@ Kotlin Multiplatform + Compose Multiplatform で Android / iOS / Desktop / Web �
 
 - **ISBN 入力 / バーコードスキャン**（Android）で書籍を検索・登録
 - **Google Books API** から書影・著者・出版社などのメタデータを自動取得
+- **デバッグ環境のみ HTTP 通信ログを出力** — Android は Logcat、iOS は NSLog、Desktop は標準出力、Web はブラウザコンソールに出力。リリース相当環境では無効
 - **長押しドラッグで並べ替え** — ホーム画面で書籍カードの左端ハンドルを長押しして上下にドラッグ。長押し確定時にハプティックフィードバックを発生
 - **ライト / ダークテーマ**を手動切替
 - **ローカル保存**（JSON）— 端末内のみ、ネットワーク同期なし
