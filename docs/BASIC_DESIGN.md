@@ -1,7 +1,7 @@
 # Recobook 基本設計書
 
-**バージョン**: 1.2.0  
-**最終更新**: 2026-05-31  
+**バージョン**: 1.3.0
+**最終更新**: 2026-07-01
 **対象プロジェクト**: [Recobook](../README.MD)
 
 ---
@@ -28,7 +28,7 @@
 
 ### 1.2 目的
 
-ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は OpenBD API から自動取得し、端末内にローカル保存する。
+ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は OpenBD API から自動取得し、端末内にローカル保存する。登録後は詳細画面から貸出状態と貸出先名を管理できる。
 
 ### 1.3 対応プラットフォーム
 
@@ -65,7 +65,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | ネットワーク | 書籍検索はインターネット接続が必要（ローカル登録済みデータの閲覧・削除はオフライン可） |
 | OpenBD API | 認証不要の公開 API を使用。ISBN を指定して書誌情報を取得する |
 | カメラ | バーコードスキャンは Android のみ対応。カメラなし端末でも他機能は利用可 |
-| ストレージ | 書籍データは各端末のローカルストレージに保存。クラウド同期なし |
+| ストレージ | 書籍データと貸出先履歴は各端末のローカルストレージに保存。クラウド同期なし |
 
 ### 2.2 制約・非機能要件
 
@@ -83,9 +83,9 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 
 ## 3. 画面一覧
 
-本アプリは **単一画面（シングルスクリーン）** 構成である。ナビゲーションなし。
+本アプリは **単一路線の Compose 画面切替** 構成である。外部ナビゲーションライブラリは使わず、`selectedBookId` の状態で一覧表示と詳細表示を切り替える。
 
-### 3.1 メイン画面（唯一の画面）
+### 3.1 本棚一覧表示
 
 ```
 ┌─────────────────────────────────────┐
@@ -104,10 +104,33 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │  │  │   │ 著者               │ove │  │     ⠿⠿ = ドラッグハンドル
 │  │  │   │ 出版社 • 出版日    │    │  │
 │  │  │   │ ISBN XXXXXXXXXX    │    │  │
-│  └──┴───┴────────────────────┴────┘  │
+│  └──┴───┴────────────────────┴────┘  │  ← タップで詳細表示
 │  （以下 LazyColumn で長押しドラッグ） │
 │                                     │
 │  No books yet. Add one by ISBN.     │  ← EmptyState（登録なし時）
+└─────────────────────────────────────┘
+```
+
+### 3.2 書籍詳細表示
+
+```
+┌─────────────────────────────────────┐
+│  [Back to shelf]  Book details      │
+├─────────────────────────────────────┤
+│  ┌──────────────┬────────────────┐  │
+│  │   書影       │ タイトル        │  │
+│  │              │ 著者            │  │
+│  │              │ [Available]     │  │
+│  └──────────────┴────────────────┘  │
+│  ISBN / 出版社 / 出版日 / ページ数   │
+│  カテゴリ / 説明                     │
+├─────────────────────────────────────┤
+│  Lending                            │
+│  Borrower name [________________]   │
+│  Borrower history [Alice][Bob]      │
+│  [Lend book] [Mark as returned]     │
+├─────────────────────────────────────┤
+│            [ Remove ]               │
 └─────────────────────────────────────┘
 ```
 
@@ -115,14 +138,15 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 
 | コンポーネント | 役割 | 表示条件 |
 |---|---|---|
-| `HeaderRow` | アプリ名・タグライン・テーマ切替ボタン | 常時表示 |
-| `IsbnInputCard` | ISBN テキストフィールド・検索ボタン・スキャンボタン | 常時表示 |
-| Scan ボタン | バーコードカメラ起動 | `IsbnScanner.isAvailable == true`（Android のみ） |
-| 検索ボタン | ローディングインジケーター兼用 | 常時表示（検索中は `CircularProgressIndicator` に切替） |
+| `HeaderRow` | アプリ名・タグライン・テーマ切替ボタン | 一覧表示時 |
+| `IsbnInputCard` | ISBN テキストフィールド・検索ボタン・スキャンボタン | 一覧表示時 |
+| Scan ボタン | バーコードカメラ起動 | 一覧表示かつ `IsbnScanner.isAvailable == true`（Android のみ） |
+| 検索ボタン | ローディングインジケーター兼用 | 一覧表示時（検索中は `CircularProgressIndicator` に切替） |
 | `EmptyState` | 未登録時のプレースホルダー | `books.isEmpty()` のとき |
 | `BookList` | 登録書籍一覧（ストア保存順・手動並べ替え可能） | `books.isNotEmpty()` のとき |
-| `BookCard` | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN・削除ボタン | 各書籍エントリ |
-| Snackbar | 操作結果メッセージ | 検索・追加・更新・エラー時 |
+| `BookCard` | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN・貸出中バッジ・削除ボタン | 各書籍エントリ |
+| `BookDetailScreen` | 書誌詳細・貸出状態編集・貸出先履歴候補・削除ボタン | 書籍カードをタップしたとき |
+| Snackbar | 操作結果メッセージ | 検索・追加・更新・削除・貸出更新・エラー時 |
 
 #### Snackbar メッセージ一覧
 
@@ -132,6 +156,9 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | ISBN の桁数が 10 でも 13 でもない | `ISBN must be 10 or 13 characters.` |
 | 新規追加成功 | `Added to your shelf.` |
 | 既存エントリ更新成功 | `Updated existing entry.` |
+| 貸出先保存成功 | `Saved lending details.` |
+| 返却処理成功 | `Marked as available.` |
+| 書籍削除成功 | `Removed from your shelf.` |
 | 該当書籍なし | `No book found for that ISBN.` |
 | 通信エラー等 | API エラーメッセージをそのまま表示 |
 
@@ -164,11 +191,15 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | # | 機能 | 説明 |
 |---|---|---|
 | F-11 | 書籍一覧表示 | ストアに保存された順序で表示（初期は登録日時降順、手動並べ替え後はその順序を維持） |
-| F-12 | 書籍カード表示 | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN を表示。書影がない場合は「No Cover」プレースホルダーを表示 |
+| F-12 | 書籍カード表示 | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN を表示。貸出中の場合は貸出先バッジを表示。書影がない場合は「No Cover」プレースホルダーを表示 |
 | F-13 | 書籍削除 | `id` を指定してコレクションから削除 |
 | F-14 | 空状態表示 | 書籍未登録時にガイドメッセージを表示 |
 | F-21 | 書籍並べ替え | `BookCard` の左端ドラッグハンドルを長押しして上下ドラッグで順序変更。変更はストアに永続化される |
 | F-22 | 長押し時ハプティックフィードバック | 長押しが確定してドラッグ可能になった瞬間に振動フィードバックを発生させる。Android は `HapticFeedbackConstants.LONG_PRESS`、iOS は `UIImpactFeedbackGenerator(style: medium)` を使用。Desktop / Web は no-op |
+| F-23 | 書籍詳細表示 | 書籍カードのタップで詳細表示へ切り替え、書影・説明・カテゴリ・ページ数などの書誌情報を表示 |
+| F-24 | 貸出状態管理 | 詳細表示で貸出先名を登録すると貸出中、返却操作で未貸出へ戻す |
+| F-25 | 貸出先履歴保持 | 一度入力した貸出先名を別ストアに保存し、返却後も候補として保持 |
+| F-26 | 貸出先候補提示 | 貸出先名入力欄の下に、入力済み履歴を名前順でフィルタ表示し、タップで再入力できる |
 
 ### 4.4 表示・テーマ
 
@@ -182,7 +213,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 
 | # | 機能 | 説明 |
 |---|---|---|
-| F-18 | ローカル保存 | 書籍データを JSON 形式で端末内に保存（プラットフォームごとに保存先が異なる。後述） |
+| F-18 | ローカル保存 | 書籍データと貸出先履歴を JSON 形式または `localStorage` で端末内に保存（プラットフォームごとに保存先が異なる。後述） |
 | F-19 | 起動時自動読み込み | アプリ起動時に既存データを自動復元 |
 | F-20 | リアルタイム同期 | KStore の `Flow` により UI とストレージが常時同期 |
 
@@ -200,6 +231,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │  ├── IsbnInputCard    ISBN 入力・スキャン起動              │
 │  ├── BookList         書籍一覧（LazyColumn + ドラッグ）   │
 │  ├── BookCard         書籍カード 1 件 + ドラッグハンドル  │
+│  ├── BookDetailScreen 書誌詳細・貸出管理                  │
 │  ├── DragHandleIcon   2×3 ドットのドラッグ操作ガイド      │
 │  └── EmptyState       未登録時プレースホルダー            │
 └────────────────────────┬─────────────────────────────────┘
@@ -207,26 +239,34 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 ┌────────────────────────▼─────────────────────────────────┐
 │                   Domain Layer                            │
 │  BooksRepository                                          │
-│  ├── books: Flow<List<Book>>    書籍一覧ストリーム        │
-│  ├── addByIsbn(isbn)            検索・追加・更新          │
-│  ├── removeById(id)             削除                      │
-│  └── reorderBooks(from, to)     並べ替え                  │
+│  ├── books: Flow<List<Book>>          書籍一覧ストリーム  │
+│  ├── borrowerHistory: Flow<List<String>> 貸出先候補       │
+│  ├── addByIsbn(isbn)                  検索・追加・更新    │
+│  ├── removeById(id)                   削除                │
+│  ├── reorderBooks(from, to)           並べ替え            │
+│  └── updateLoan(id, borrower)         貸出状態更新        │
 └──────────────┬────────────────────────┬──────────────────┘
                │ suspend fun            │ KStore API
 ┌──────────────▼──────────┐  ┌─────────▼────────────────────┐
-│   Data Layer             │  │   Storage Layer               │
-│   BooksApi               │  │   KStore<BookCollection>      │
-│   ・fetchByIsbn(isbn)    │  │   ├── Android  : filesDir/    │
-│                          │  │   │              recobook_     │
-│   OpenBD API             │  │   │              books.json    │
-│   (HTTPS / Ktor)         │  │   ├── iOS       : Documents/  │
-│                          │  │   │              recobook/     │
-└──────────────────────────┘  │   │              books.json    │
-                               │   ├── Desktop  : ~/.recobook/ │
-                               │   │              books.json    │
-                               │   └── Web      : localStorage │
-                               │              ["recobook_books"]│
-                               └──────────────────────────────┘
+│   Data Layer             │  │   Storage Layer                   │
+│   BooksApi               │  │   KStore<BookCollection>          │
+│   ・fetchByIsbn(isbn)    │  │   KStore<BorrowerHistory>         │
+│                          │  │   ├── Android  : filesDir/        │
+│   OpenBD API             │  │   │              recobook_books   │
+│   (HTTPS / Ktor)         │  │   │              .json /          │
+│                          │  │   │              recobook_        │
+└──────────────────────────┘  │   │              borrowers.json   │
+                               │   ├── iOS       : Documents/     │
+                               │   │              recobook/       │
+                               │   │              books.json /    │
+                               │   │              borrowers.json  │
+                               │   ├── Desktop  : ~/.recobook/    │
+                               │   │              books.json /    │
+                               │   │              borrowers.json  │
+                               │   └── Web      : localStorage    │
+                               │              ["recobook_books"]  │
+                               │              ["recobook_borrowers"]│
+                               └──────────────────────────────────┘
 ```
 
 ### 5.2 モジュール構成
@@ -256,11 +296,14 @@ Recobook/
 | 関数 / クラス | commonMain（expect） | Android | iOS | Desktop | Web |
 |---|---|---|---|---|---|
 | `createBookStore()` | `expect fun` | `filesDir` を使用 | `NSDocumentDirectory` を使用 | `user.home` を使用 | `localStorage` を使用 |
+| `createBorrowerHistoryStore()` | `expect fun` | `filesDir` を使用 | `NSDocumentDirectory` を使用 | `user.home` を使用 | `localStorage` を使用 |
 | `rememberIsbnScanner()` | `@Composable expect fun` | ZXing でバーコードスキャン | スキャン不可（`isAvailable = false`） | スキャン不可 | スキャン不可 |
 
 ### 5.4 状態管理
 
-UI 状態は Compose の `remember` / `mutableStateOf` で管理する。永続データは `KStore.updates` が返す `Flow<BookCollection?>` を `collectAsState` で購読し、自動的に UI へ反映される。
+UI 状態は Compose の `remember` / `mutableStateOf` で管理する。永続データは `KStore.updates` が返す `Flow<BookCollection?>` と `Flow<BorrowerHistory?>` を `collectAsState` で購読し、自動的に UI へ反映される。
+
+画面遷移は `selectedBookId` により制御し、null のとき本棚一覧、書籍 ID が入っているとき詳細表示を描画する。
 
 ドラッグ&ドロップ並べ替えでは、`BookList` がローカルの `SnapshotStateList<Book>` を保持し、ドラッグ操作中は即座にローカルリストを更新することで視覚的フィードバックを実現する。ドラッグ終了時に `BooksRepository.reorderBooks` を呼び出してストアへ永続化する。
 
@@ -288,7 +331,7 @@ BookList の dragItems (SnapshotStateList<Book>)
 
 ### 6.1 ストレージ形式
 
-リレーショナルデータベース（SQLite 等）は使用しない。書籍データは **単一 JSON ファイル**（または Web の場合は `localStorage` の単一エントリ）として保存される。
+リレーショナルデータベース（SQLite 等）は使用しない。書籍データと貸出先履歴は **JSON ファイル**（または Web の場合は `localStorage` の単一エントリ）として保存される。
 
 シリアライズには `kotlinx.serialization` を使用。読み込み時は `ignoreUnknownKeys = true` / `isLenient = true` で後方互換性を確保している。
 
@@ -319,15 +362,28 @@ BookList の dragItems (SnapshotStateList<Book>)
 | `pageCount` | `Int?` | NULL 許可 | ページ数 |
 | `categories` | `List<String>` | デフォルト空リスト | カテゴリ／ジャンルリスト |
 | `addedAt` | `Long` | NOT NULL | 登録日時（エポックミリ秒）。更新時も保持される |
+| `loanInfo` | `LoanInfo?` | NULL 許可 | 貸出中の場合の貸出情報。`null` は未貸出 |
+
+#### LoanInfo（貸出情報）
+
+| フィールド | 型 | 制約 | 説明 |
+|---|---|---|---|
+| `borrowerName` | `String` | NOT NULL | 貸出先名。保存時に trim 済み |
+
+#### BorrowerHistory（貸出先履歴）
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `names` | `List<String>` | 入力済み貸出先名の一覧。空白除去・重複排除・名前順ソート済みで保存 |
 
 ### 6.3 保存先パス
 
-| プラットフォーム | パス |
-|---|---|
-| Android | `{Context.filesDir}/recobook_books.json` |
-| iOS | `{NSDocumentDirectory}/recobook/books.json` |
-| Desktop (JVM) | `{user.home}/.recobook/books.json` |
-| Web (JS / WasmJS) | `localStorage["recobook_books"]` |
+| プラットフォーム | 書籍データ | 貸出先履歴 |
+|---|---|---|
+| Android | `{Context.filesDir}/recobook_books.json` | `{Context.filesDir}/recobook_borrowers.json` |
+| iOS | `{NSDocumentDirectory}/recobook/books.json` | `{NSDocumentDirectory}/recobook/borrowers.json` |
+| Desktop (JVM) | `{user.home}/.recobook/books.json` | `{user.home}/.recobook/borrowers.json` |
+| Web (JS / WasmJS) | `localStorage["recobook_books"]` | `localStorage["recobook_borrowers"]` |
 
 Android・iOS・Desktop のパスは、アプリ初回起動時にディレクトリが存在しない場合に自動作成される。
 
@@ -345,6 +401,7 @@ Android・iOS・Desktop のパスは、アプリ初回起動時にディレク�
 重複と判定された場合：
 - メタデータ（タイトル・著者等）は最新の API 取得値に上書き
 - `addedAt`（登録日時）は**既存の値を保持**（リストの表示順が変わらないようにするため）
+- `loanInfo`（貸出状態）は**既存の値を保持**（書誌情報再取得で貸出状況が消えないようにするため）
 - リスト内の**位置は変化しない**（末尾への追加や先頭移動は行わない）
 
 新規エントリの場合：
@@ -363,6 +420,7 @@ Android・iOS・Desktop のパスは、アプリ初回起動時にディレク�
 | 対象 | 暗号化 | 理由 |
 |---|---|---|
 | ローカルストレージの書籍データ | **なし** | 書籍メタデータは公開情報であり、機密性は低い |
+| ローカルストレージの貸出先履歴 | **なし** | 貸出先名はユーザー入力だが外部送信せず、端末ローカルに限定して保持する |
 | API 通信 | **あり（HTTPS）** | OpenBD API との通信は TLS で保護される |
 | 書影 URL | **URL レベルで HTTPS 強制** | `http://` プレフィックスを `https://` に変換してから保存・表示 |
 
@@ -411,6 +469,7 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 ### 7.6 個人情報・プライバシー
 
 - ユーザーの個人情報は一切収集・送信しない
+- 貸出先名はユーザーが任意入力できるが、デバイスローカルにのみ保存され、外部サーバーに送信されない
 - 書籍データはデバイスローカルにのみ保存され、外部サーバーに送信されない
 - OpenBD API へのリクエストには ISBN のみが含まれ、ユーザー識別情報は含まれない
 - アプリは広告 ID・デバイス ID・位置情報などのトラッキング情報を使用しない
@@ -624,3 +683,42 @@ sequenceDiagram
 | **キャンセル時の復元** | ドラッグ開始時に `dragOriginalItems` を保存しておき、キャンセル時はこれを使って復元する |
 | **インデックスの整合性** | `startIndex` と `endIndex` はいずれも**ドラッグ開始時のストア順**に基づく。中間スワップはすべてローカルのみで行われるため、最終的な `reorderBooks(start, end)` 呼び出しでストアと整合する |
 | **自動スクロール** | ドラッグ位置がリスト端に達すると `lazyListState.scrollBy` で自動スクロールする |
+
+---
+
+### 9.3 貸出状態更新
+
+詳細表示での貸出先入力・履歴候補表示・返却処理の流れを示す。
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Detail as BookDetailScreen
+    participant Repo as BooksRepository
+    participant BookStore as KStore<BookCollection>
+    participant HistoryStore as KStore<BorrowerHistory>
+    participant App as App State
+
+    User->>Detail: 書籍カードをタップ
+    Detail->>App: selectedBookId ← book.id
+    App-->>User: 詳細表示を描画
+
+    alt 貸出先を登録 / 更新
+        User->>Detail: Borrower name に自由入力
+        Detail-->>User: 一致する履歴候補を名前順で表示
+        User->>Detail: [Lend book] / [Save borrower]
+        Detail->>Repo: updateLoan(book.id, borrowerName.trim())
+        Repo->>BookStore: loanInfo を更新
+        Repo->>HistoryStore: 名前を trim・重複排除・名前順で保存
+        BookStore-)App: books Flow emit
+        HistoryStore-)App: borrowerHistory Flow emit
+        App-->>User: Snackbar: "Saved lending details."
+    else 返却
+        User->>Detail: [Mark as returned]
+        Detail->>Repo: updateLoan(book.id, null)
+        Repo->>BookStore: loanInfo ← null
+        Note over Repo,HistoryStore: 履歴ストアは更新しない
+        BookStore-)App: books Flow emit
+        App-->>User: Snackbar: "Marked as available."
+    end
+```

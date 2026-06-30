@@ -1,15 +1,16 @@
 package org.ukky.recobook
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import org.jetbrains.compose.resources.stringResource
 import org.ukky.recobook.data.*
 import org.ukky.recobook.network.createRecobookHttpClient
 import org.ukky.recobook.storage.createBookStore
+import org.ukky.recobook.storage.createBorrowerHistoryStore
 import org.ukky.recobook.theme.AppTheme
 import org.ukky.recobook.theme.LocalThemeIsDark
 import recobook.sharedui.generated.resources.*
@@ -49,15 +51,25 @@ fun App(
     val repository = rememberBooksRepository(httpClient)
     val imageLoader = rememberImageLoader(httpClient)
     val books by repository.books.collectAsState(emptyList())
+    val borrowerHistory by repository.borrowerHistory.collectAsState(emptyList())
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var isbnInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var selectedBookId by remember { mutableStateOf<String?>(null) }
 
     val scanner = rememberIsbnScanner { scanned ->
         isbnInput = scanned
         coroutineScope.launch { submitIsbn(scanned, repository, snackbarHostState, onLoading = { isLoading = it }) }
     }
+
+    LaunchedEffect(books, selectedBookId) {
+        if (selectedBookId != null && books.none { it.id == selectedBookId }) {
+            selectedBookId = null
+        }
+    }
+
+    val selectedBook = books.firstOrNull { it.id == selectedBookId }
 
     fun onSubmit(raw: String = isbnInput) {
         coroutineScope.launch {
@@ -88,26 +100,60 @@ fun App(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                HeaderRow()
-                IsbnInputCard(
-                    isbnInput = isbnInput,
-                    isLoading = isLoading,
-                    scannerAvailable = scanner.isAvailable,
-                    onIsbnChanged = { isbnInput = it },
-                    onScan = { scanner.launch() },
-                    onSubmit = { onSubmit() },
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                if (books.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        EmptyState()
+                if (selectedBook == null) {
+                    HeaderRow()
+                    IsbnInputCard(
+                        isbnInput = isbnInput,
+                        isLoading = isLoading,
+                        scannerAvailable = scanner.isAvailable,
+                        onIsbnChanged = { isbnInput = it },
+                        onScan = { scanner.launch() },
+                        onSubmit = { onSubmit() },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    if (books.isEmpty()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            EmptyState()
+                        }
+                    } else {
+                        BookList(
+                            books = books,
+                            imageLoader = imageLoader,
+                            onOpenDetails = { book -> selectedBookId = book.id },
+                            onRemove = { book ->
+                                coroutineScope.launch {
+                                    repository.removeById(book.id)
+                                    snackbarHostState.showSnackbar("Removed from your shelf.")
+                                }
+                            },
+                            onReorder = { from, to -> coroutineScope.launch { repository.reorderBooks(from, to) } },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 } else {
-                    BookList(
-                        books = books,
+                    BookDetailScreen(
+                        book = selectedBook,
                         imageLoader = imageLoader,
-                        onRemove = { book -> coroutineScope.launch { repository.removeById(book.id) } },
-                        onReorder = { from, to -> coroutineScope.launch { repository.reorderBooks(from, to) } },
+                        borrowerHistory = borrowerHistory,
+                        onBack = { selectedBookId = null },
+                        onUpdateLoan = { borrowerName ->
+                            coroutineScope.launch {
+                                repository.updateLoan(selectedBook.id, borrowerName)
+                                val message = if (borrowerName.isNullOrBlank()) {
+                                    "Marked as available."
+                                } else {
+                                    "Saved lending details."
+                                }
+                                snackbarHostState.showSnackbar(message)
+                            }
+                        },
+                        onRemove = {
+                            coroutineScope.launch {
+                                repository.removeById(selectedBook.id)
+                                selectedBookId = null
+                                snackbarHostState.showSnackbar("Removed from your shelf.")
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -235,6 +281,7 @@ private fun EmptyState() {
 private fun BookList(
     books: List<Book>,
     imageLoader: ImageLoader,
+    onOpenDetails: (Book) -> Unit,
     onRemove: (Book) -> Unit,
     onReorder: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -315,6 +362,7 @@ private fun BookList(
             BookCard(
                 book = book,
                 imageLoader = imageLoader,
+                onOpenDetails = { onOpenDetails(book) },
                 onRemove = { onRemove(book) },
                 modifier = Modifier.draggableItem(dragDropState, index),
             )
@@ -326,11 +374,14 @@ private fun BookList(
 private fun BookCard(
     book: Book,
     imageLoader: ImageLoader,
+    onOpenDetails: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenDetails),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
@@ -395,11 +446,286 @@ private fun BookCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline,
                 )
+                if (book.loanInfo != null) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Text(
+                            text = "${stringResource(Res.string.lent_to_label)} ${book.loanInfo.borrowerName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
             TextButton(onClick = onRemove) {
                 Text(stringResource(Res.string.remove))
             }
         }
+    }
+}
+
+@Composable
+private fun BookDetailScreen(
+    book: Book,
+    imageLoader: ImageLoader,
+    borrowerHistory: List<String>,
+    onBack: () -> Unit,
+    onUpdateLoan: (String?) -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var borrowerName by remember(book.id, book.loanInfo) {
+        mutableStateOf(book.loanInfo?.borrowerName.orEmpty())
+    }
+    val filteredBorrowerHistory = remember(borrowerHistory, borrowerName) {
+        val query = borrowerName.trim()
+        borrowerHistory.filter { candidate ->
+            query.isBlank() || candidate.contains(query, ignoreCase = true)
+        }
+    }
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TextButton(onClick = onBack) {
+                Text(stringResource(Res.string.back_to_list))
+            }
+            Text(
+                text = stringResource(Res.string.book_details_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
+
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                BookDetailHeader(book = book, imageLoader = imageLoader)
+                BookMetadata(book = book)
+            }
+        }
+
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.lending_section_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = if (book.loanInfo == null) {
+                        stringResource(Res.string.lending_status_available)
+                    } else {
+                        "${stringResource(Res.string.lent_to_label)} ${book.loanInfo.borrowerName}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = borrowerName,
+                    onValueChange = { borrowerName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.borrower_name_label)) },
+                    placeholder = { Text(stringResource(Res.string.borrower_name_placeholder)) },
+                    singleLine = true,
+                )
+                if (filteredBorrowerHistory.isNotEmpty()) {
+                    Text(
+                        text = stringResource(Res.string.borrower_history_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(filteredBorrowerHistory, key = { it }) { name ->
+                            AssistChip(
+                                onClick = { borrowerName = name },
+                                label = { Text(name) },
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Button(
+                        onClick = { onUpdateLoan(borrowerName.trim()) },
+                        enabled = borrowerName.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            if (book.loanInfo == null) {
+                                stringResource(Res.string.lend_book)
+                            } else {
+                                stringResource(Res.string.save_borrower)
+                            },
+                        )
+                    }
+                    if (book.loanInfo != null) {
+                        OutlinedButton(
+                            onClick = { onUpdateLoan(null) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(stringResource(Res.string.mark_returned))
+                        }
+                    }
+                }
+            }
+        }
+
+        OutlinedButton(
+            onClick = onRemove,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(Res.string.remove))
+        }
+    }
+}
+
+@Composable
+private fun BookDetailHeader(
+    book: Book,
+    imageLoader: ImageLoader,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (book.thumbnailUrl != null) {
+            AsyncImage(
+                model = book.thumbnailUrl,
+                contentDescription = null,
+                imageLoader = imageLoader,
+                modifier = Modifier
+                    .size(width = 112.dp, height = 160.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(width = 112.dp, height = 160.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("No Cover", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = book.title,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            if (book.authors.isNotEmpty()) {
+                Text(
+                    text = book.authors.joinToString(", "),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (book.loanInfo == null) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.lending_status_available),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.lending_status_loaned),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookMetadata(book: Book) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        DetailLine(label = stringResource(Res.string.isbn_label), value = book.isbn)
+        book.publisher?.takeIf { it.isNotBlank() }?.let {
+            DetailLine(label = stringResource(Res.string.publisher_label), value = it)
+        }
+        book.publishedDate?.takeIf { it.isNotBlank() }?.let {
+            DetailLine(label = stringResource(Res.string.published_date_label), value = it)
+        }
+        book.pageCount?.let {
+            DetailLine(label = stringResource(Res.string.page_count_label), value = it.toString())
+        }
+        if (book.categories.isNotEmpty()) {
+            DetailLine(
+                label = stringResource(Res.string.categories_label),
+                value = book.categories.joinToString(", "),
+            )
+        }
+        book.description?.takeIf { it.isNotBlank() }?.let {
+            DetailLine(label = stringResource(Res.string.description_label), value = it)
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(
+    label: String,
+    value: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+        )
     }
 }
 
@@ -446,7 +772,10 @@ private fun rememberAppHttpClient(): io.ktor.client.HttpClient {
 @Composable
 private fun rememberBooksRepository(client: io.ktor.client.HttpClient): BooksRepository {
     val store = remember { createBookStore() }
-    return remember(client, store) { BooksRepository(store, BooksApi(client)) }
+    val borrowerHistoryStore = remember { createBorrowerHistoryStore() }
+    return remember(client, store, borrowerHistoryStore) {
+        BooksRepository(store, borrowerHistoryStore, BooksApi(client))
+    }
 }
 
 @Composable

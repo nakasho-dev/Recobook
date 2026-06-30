@@ -15,19 +15,23 @@ import kotlin.test.*
 class BooksRepositoryTest {
 
     private val tmpFile: java.io.File = java.io.File.createTempFile("kstore-repo-test", ".json")
+    private val borrowerTmpFile: java.io.File = java.io.File.createTempFile("kstore-borrowers-test", ".json")
     private val testJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
     @BeforeTest
     fun setUp() {
         tmpFile.delete()
+        borrowerTmpFile.delete()
     }
 
     @AfterTest
     fun tearDown() {
         tmpFile.delete()
+        borrowerTmpFile.delete()
     }
 
     private fun newStore() = storeOf(file = Path(tmpFile.absolutePath), default = BookCollection())
+    private fun newBorrowerStore() = storeOf(file = Path(borrowerTmpFile.absolutePath), default = BorrowerHistory())
 
     private fun mockApi(responseJson: String? = null, throwOn: Exception? = null): BooksApi {
         val engine = MockEngine { _ ->
@@ -41,11 +45,17 @@ class BooksRepositoryTest {
         return BooksApi(HttpClient(engine) { install(ContentNegotiation) { json(testJson) } })
     }
 
+    private fun newRepository(
+        store: io.github.xxfast.kstore.KStore<BookCollection> = newStore(),
+        borrowerStore: io.github.xxfast.kstore.KStore<BorrowerHistory> = newBorrowerStore(),
+        api: BooksApi = mockApi(),
+    ) = BooksRepository(store, borrowerStore, api)
+
     // --- books Flow ---
 
     @Test
     fun books_initialState_emitsEmptyList() = runTest {
-        val repo = BooksRepository(newStore(), mockApi())
+        val repo = newRepository()
         assertEquals(emptyList(), repo.books.first())
     }
 
@@ -53,7 +63,7 @@ class BooksRepositoryTest {
 
     @Test
     fun addByIsbn_newBook_returnsSuccessNotUpdated() = runTest {
-        val repo = BooksRepository(newStore(), mockApi(SINGLE_BOOK_JSON))
+        val repo = newRepository(api = mockApi(SINGLE_BOOK_JSON))
         val result = repo.addByIsbn("9784873119038")
         assertIs<BookAddResult.Success>(result)
         assertEquals(false, result.updated)
@@ -66,7 +76,7 @@ class BooksRepositoryTest {
         val existing = Book(id = "existing", isbn = "existing-isbn", title = "既存の本")
         store.set(BookCollection(listOf(existing)))
 
-        val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
+        val repo = newRepository(store = store, api = mockApi(SINGLE_BOOK_JSON))
         repo.addByIsbn("9784873119038")
 
         val books = repo.books.first()
@@ -85,7 +95,7 @@ class BooksRepositoryTest {
             Book(id = "9784873119038", isbn = "9784873119038", title = "旧タイトル", addedAt = originalAddedAt)
         )))
 
-        val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
+        val repo = newRepository(store = store, api = mockApi(SINGLE_BOOK_JSON))
         val result = repo.addByIsbn("9784873119038")
 
         assertIs<BookAddResult.Success>(result)
@@ -103,7 +113,7 @@ class BooksRepositoryTest {
             Book(id = "other-id", isbn = "9784873119038", isbn13 = "9784873119038", title = "旧本")
         )))
 
-        val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
+        val repo = newRepository(store = store, api = mockApi(SINGLE_BOOK_JSON))
         val result = repo.addByIsbn("9784873119038")
 
         assertIs<BookAddResult.Success>(result)
@@ -119,7 +129,7 @@ class BooksRepositoryTest {
         )))
 
         val apiJson = SINGLE_BOOK_JSON
-        val repo = BooksRepository(store, mockApi(apiJson))
+        val repo = newRepository(store = store, api = mockApi(apiJson))
         val result = repo.addByIsbn("9784873119038")
 
         assertIs<BookAddResult.Success>(result)
@@ -131,6 +141,7 @@ class BooksRepositoryTest {
     fun addByIsbn_duplicateByCanonicalIsbn_updatesInPlaceAndPreservesAddedAt() = runTest {
         val store = newStore()
         val originalAddedAt = 12345L
+        val originalLoanInfo = LoanInfo("Charlie")
         store.set(BookCollection(listOf(
             Book(id = "first", isbn = "first-isbn", title = "先頭の本"),
             Book(
@@ -138,10 +149,11 @@ class BooksRepositoryTest {
                 isbn = "9784873119038",
                 title = "旧タイトル",
                 addedAt = originalAddedAt,
+                loanInfo = originalLoanInfo,
             ),
         )))
 
-        val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
+        val repo = newRepository(store = store, api = mockApi(SINGLE_BOOK_JSON))
         val result = repo.addByIsbn("9784873119038")
 
         assertIs<BookAddResult.Success>(result)
@@ -152,13 +164,14 @@ class BooksRepositoryTest {
         assertEquals("9784873119038", books[1].id)
         assertEquals("テスト書籍", books[1].title)
         assertEquals(originalAddedAt, books[1].addedAt)
+        assertEquals(originalLoanInfo, books[1].loanInfo)
     }
 
     // --- addByIsbn エラーケース ---
 
     @Test
     fun addByIsbn_apiReturnsNull_returnsNotFound() = runTest {
-        val repo = BooksRepository(newStore(), mockApi(EMPTY_JSON))
+        val repo = newRepository(api = mockApi(EMPTY_JSON))
         val result = repo.addByIsbn("0000000000000")
         assertIs<BookAddResult.NotFound>(result)
         assertEquals("0000000000000", result.isbn)
@@ -166,7 +179,7 @@ class BooksRepositoryTest {
 
     @Test
     fun addByIsbn_apiThrowsException_returnsError() = runTest {
-        val repo = BooksRepository(newStore(), mockApi(throwOn = RuntimeException("Network error")))
+        val repo = newRepository(api = mockApi(throwOn = RuntimeException("Network error")))
         val result = repo.addByIsbn("9784873119038")
         assertIs<BookAddResult.Error>(result)
         assertEquals("9784873119038", result.isbn)
@@ -183,7 +196,7 @@ class BooksRepositoryTest {
             Book(id = "id-2", isbn = "isbn-2", title = "本2"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.removeById("id-1")
 
         val books = repo.books.first()
@@ -197,7 +210,7 @@ class BooksRepositoryTest {
         val book = Book(id = "id-1", isbn = "isbn-1", title = "本1")
         store.set(BookCollection(listOf(book)))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.removeById("non-existent")
 
         val books = repo.books.first()
@@ -216,7 +229,7 @@ class BooksRepositoryTest {
             Book(id = "id-3", isbn = "isbn-3", title = "本3"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 0, toIndex = 2)
 
         val books = repo.books.first()
@@ -235,7 +248,7 @@ class BooksRepositoryTest {
             Book(id = "id-3", isbn = "isbn-3", title = "本3"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 2, toIndex = 0)
 
         val books = repo.books.first()
@@ -253,7 +266,7 @@ class BooksRepositoryTest {
             Book(id = "id-2", isbn = "isbn-2", title = "本2"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 0, toIndex = 1)
 
         val books = repo.books.first()
@@ -270,7 +283,7 @@ class BooksRepositoryTest {
             Book(id = "id-2", isbn = "isbn-2", title = "本2"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 0, toIndex = 0)
 
         val books = repo.books.first()
@@ -287,7 +300,7 @@ class BooksRepositoryTest {
         )
         store.set(BookCollection(originals))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 0, toIndex = 5)
 
         val books = repo.books.first()
@@ -304,7 +317,7 @@ class BooksRepositoryTest {
         )
         store.set(BookCollection(originals))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = -1, toIndex = 1)
 
         val books = repo.books.first()
@@ -319,7 +332,7 @@ class BooksRepositoryTest {
             Book(id = "id-1", isbn = "isbn-1", title = "本1"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         repo.reorderBooks(fromIndex = 0, toIndex = 0)
 
         val books = repo.books.first()
@@ -337,7 +350,7 @@ class BooksRepositoryTest {
             Book(id = "id-D", isbn = "isbn-D", title = "D"),
         )))
 
-        val repo = BooksRepository(store, mockApi())
+        val repo = newRepository(store = store)
         // A を末尾へ: [A,B,C,D] → [B,C,D,A]
         repo.reorderBooks(fromIndex = 0, toIndex = 3)
         // D を先頭へ: [B,C,D,A] → [A,B,C,D] ではなく D=idx2 → 0: [D,B,C,A]
@@ -349,6 +362,53 @@ class BooksRepositoryTest {
         assertEquals("id-B", books[1].id)
         assertEquals("id-C", books[2].id)
         assertEquals("id-A", books[3].id)
+    }
+
+    @Test
+    fun updateLoan_existingBook_setsBorrowerAndStoresHistorySortedByName() = runTest {
+        val store = newStore()
+        val borrowerStore = newBorrowerStore()
+        borrowerStore.set(BorrowerHistory(listOf("Zoe", "alice")))
+        store.set(
+            BookCollection(
+                listOf(
+                    Book(id = "id-1", isbn = "isbn-1", title = "本1"),
+                ),
+            ),
+        )
+
+        val repo = newRepository(store = store, borrowerStore = borrowerStore)
+        repo.updateLoan("id-1", " Bob ")
+
+        val books = repo.books.first()
+        assertEquals("Bob", books.single().loanInfo?.borrowerName)
+        assertEquals(listOf("alice", "Bob", "Zoe"), repo.borrowerHistory.first())
+    }
+
+    @Test
+    fun updateLoan_returnedBook_clearsLoanButKeepsBorrowerHistory() = runTest {
+        val store = newStore()
+        val borrowerStore = newBorrowerStore()
+        borrowerStore.set(BorrowerHistory(listOf("Alice", "Bob")))
+        store.set(
+            BookCollection(
+                listOf(
+                    Book(
+                        id = "id-1",
+                        isbn = "isbn-1",
+                        title = "本1",
+                        loanInfo = LoanInfo("Alice"),
+                    ),
+                ),
+            ),
+        )
+
+        val repo = newRepository(store = store, borrowerStore = borrowerStore)
+        repo.updateLoan("id-1", null)
+
+        val books = repo.books.first()
+        assertNull(books.single().loanInfo)
+        assertEquals(listOf("Alice", "Bob"), repo.borrowerHistory.first())
     }
 
     companion object {

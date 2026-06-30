@@ -1,16 +1,20 @@
 # Recobook
 
-ISBN を入力またはバーコードスキャンで書籍を検索・登録できる読書記録アプリです。  
+ISBN を入力またはバーコードスキャンで書籍を検索・登録できる読書記録アプリです。
+登録した書籍はカードをタップして詳細を開き、貸出状態や貸出先も管理できます。
 Kotlin Multiplatform + Compose Multiplatform で Android / iOS / Desktop / Web に対応しています。
 
 ## 主な機能
 
 - **ISBN 入力 / バーコードスキャン**（Android）で書籍を検索・登録
 - **OpenBD API** から書影・著者・出版社などのメタデータを自動取得
+- **カードタップで詳細表示** — 書影・説明・ページ数・カテゴリなどの書誌情報を確認可能
+- **貸出管理** — 書籍ごとに貸出先名を自由入力で登録し、返却時は未貸出へ戻せる
+- **貸出先履歴候補** — 入力済みの名前を保存し、名前順で候補表示
 - **デバッグ環境のみ HTTP 通信ログを出力** — Android は Logcat、iOS は NSLog、Desktop は標準出力、Web はブラウザコンソールに出力。リリース相当環境では無効
 - **長押しドラッグで並べ替え** — ホーム画面で書籍カードの左端ハンドルを長押しして上下にドラッグ。長押し確定時にハプティックフィードバックを発生
 - **ライト / ダークテーマ**を手動切替
-- **ローカル保存**（JSON）— 端末内のみ、ネットワーク同期なし
+- **ローカル保存**（JSON / localStorage）— 本棚データと貸出先履歴を端末内のみ保存、ネットワーク同期なし
 
 ## 動作環境
 
@@ -132,7 +136,7 @@ iosApp/iosApp.xcodeproj
 ## テスト
 
 ```bash
-# JVM テスト（共通ロジック・API・Repository・並べ替え）
+# JVM テスト（共通ロジック・API・Repository・並べ替え・貸出管理）
 ./gradlew :sharedUI:jvmTest
 
 # iOS テスト（iOS シミュレーターが必要）
@@ -145,7 +149,7 @@ iosApp/iosApp.xcodeproj
 |---|---|---|
 | `IsbnUtilsTest` | ISBN 正規化・バリデーション | `commonTest` |
 | `BooksApiTest` | OpenBD API レスポンス解析 | `commonTest` |
-| `BooksRepositoryTest` | 書籍追加・削除・**並べ替え** | `jvmTest` |
+| `BooksRepositoryTest` | 書籍追加・削除・**並べ替え**・**貸出状態更新**・**貸出先履歴保持** | `jvmTest` |
 | `DragDropStateTest` | ドラッグ状態管理（初期値・onDragEnd・onDragCancel など）| `jvmTest` |
 | `BookStoreProviderJvmTest` | Desktop ストレージパス | `jvmTest` |
 | `BookStoreProviderIosTest` | iOS ストレージパス | `iosTest` |

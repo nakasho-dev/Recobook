@@ -18,9 +18,20 @@ data class Book(
     val pageCount: Int? = null,
     val categories: List<String> = emptyList(),
     val addedAt: Long = Clock.System.now().toEpochMilliseconds(),
+    val loanInfo: LoanInfo? = null,
 )
 
 @Serializable
 data class BookCollection(
     val items: List<Book> = emptyList(),
+)
+
+@Serializable
+data class LoanInfo(
+    val borrowerName: String,
+)
+
+@Serializable
+data class BorrowerHistory(
+    val names: List<String> = emptyList(),
 )

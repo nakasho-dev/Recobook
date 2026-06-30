@@ -1,9 +1,27 @@
 <resources>
     <string name="app_name">Recobook</string>
     <string name="title_tagline">Your shelf, cataloged.</string>
+    <string name="book_details_title">Book details</string>
+    <string name="back_to_list">Back to shelf</string>
+    <string name="borrower_history_title">Borrower history</string>
+    <string name="borrower_name_label">Borrower name</string>
+    <string name="borrower_name_placeholder">Enter a name</string>
+    <string name="categories_label">Categories</string>
+    <string name="description_label">Description</string>
     <string name="isbn_hint">ISBN (10 or 13)</string>
+    <string name="isbn_label">ISBN</string>
+    <string name="lend_book">Lend book</string>
+    <string name="lending_section_title">Lending</string>
+    <string name="lending_status_available">Available</string>
+    <string name="lending_status_loaned">Lent out</string>
+    <string name="lent_to_label">Lent to</string>
+    <string name="mark_returned">Mark as returned</string>
+    <string name="page_count_label">Pages</string>
+    <string name="published_date_label">Published</string>
+    <string name="publisher_label">Publisher</string>
     <string name="search">Search</string>
     <string name="searching">Searching...</string>
+    <string name="save_borrower">Save borrower</string>
     <string name="scan">Scan</string>
     <string name="empty_state">No books yet. Add one by ISBN.</string>
     <string name="remove">Remove</string>
