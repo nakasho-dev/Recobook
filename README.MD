@@ -1,7 +1,7 @@
 # Recobook
 
 ISBN を入力またはバーコードスキャンで書籍を検索・登録できる読書記録アプリです。
-登録した書籍はカードをタップして詳細を開き、貸出状態や貸出先も管理できます。
+登録した書籍はカードをタップして詳細を開き、貸出状態や貸出先も管理できます。さらに管理画面からバックアップのエクスポート / インポートや、共有向け一覧の書き出しも行えます。
 Kotlin Multiplatform + Compose Multiplatform で Android / iOS / Desktop / Web に対応しています。
 
 ## 主な機能
@@ -11,10 +11,21 @@ Kotlin Multiplatform + Compose Multiplatform で Android / iOS / Desktop / Web �
 - **カードタップで詳細表示** — 書影・説明・ページ数・カテゴリなどの書誌情報を確認可能
 - **貸出管理** — 書籍ごとに貸出先名を自由入力で登録し、返却時は未貸出へ戻せる
 - **貸出先履歴候補** — 入力済みの名前を保存し、名前順で候補表示
+- **管理画面** — 書籍数・貸出中冊数・貸出先履歴数を確認し、各種データ入出力を実行
+- **フルバックアップのエクスポート / インポート** — 書籍データと貸出先履歴を JSONL で保存・復元。大量データでも扱いやすい行指向フォーマットを採用
+- **書籍 JSONL エクスポート** — すべての書籍データを 1 行 1 書籍の JSONL で出力し、貸出状態も保持
+- **共有向け Markdown / CSV エクスポート** — 他人に見せる本棚一覧を出力。貸出中かどうかは表示しつつ、貸出先名は除外
 - **デバッグ環境のみ HTTP 通信ログを出力** — Android は Logcat、iOS は NSLog、Desktop は標準出力、Web はブラウザコンソールに出力。リリース相当環境では無効
 - **長押しドラッグで並べ替え** — ホーム画面で書籍カードの左端ハンドルを長押しして上下にドラッグ。長押し確定時にハプティックフィードバックを発生
 - **ライト / ダークテーマ**を手動切替
 - **ローカル保存**（JSON / localStorage）— 本棚データと貸出先履歴を端末内のみ保存、ネットワーク同期なし
+
+## 管理画面とデータ入出力
+
+- 一覧ヘッダーの **Manage** から管理画面を開けます。
+- **Backup export** は `meta` / `borrower` / `book` レコードで構成した JSONL を出力します。
+- **Backup import** は現在の本棚データと貸出先履歴を **全置換** で復元します。フルバックアップ JSONL に加えて、書籍のみの JSONL 取り込みにも対応します。
+- **Markdown / CSV export** は共有用の一覧出力です。`Available` / `Lent out` の状態は含みますが、貸出先名は含みません。
 
 ## 動作環境
 
@@ -136,7 +147,7 @@ iosApp/iosApp.xcodeproj
 ## テスト
 
 ```bash
-# JVM テスト（共通ロジック・API・Repository・並べ替え・貸出管理）
+# JVM テスト（共通ロジック・API・Repository・並べ替え・貸出管理・入出力）
 ./gradlew :sharedUI:jvmTest
 
 # iOS テスト（iOS シミュレーターが必要）
@@ -150,6 +161,7 @@ iosApp/iosApp.xcodeproj
 | `IsbnUtilsTest` | ISBN 正規化・バリデーション | `commonTest` |
 | `BooksApiTest` | OpenBD API レスポンス解析 | `commonTest` |
 | `BooksRepositoryTest` | 書籍追加・削除・**並べ替え**・**貸出状態更新**・**貸出先履歴保持** | `jvmTest` |
+| `BooksRepositoryTransferTest` | **バックアップ JSONL 往復**・**書籍 JSONL 取り込み**・**Markdown / CSV 出力の貸出先非表示** | `jvmTest` |
 | `DragDropStateTest` | ドラッグ状態管理（初期値・onDragEnd・onDragCancel など）| `jvmTest` |
 | `BookStoreProviderJvmTest` | Desktop ストレージパス | `jvmTest` |
 | `BookStoreProviderIosTest` | iOS ストレージパス | `iosTest` |

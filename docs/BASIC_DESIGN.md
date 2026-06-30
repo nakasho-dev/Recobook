@@ -1,7 +1,7 @@
 # Recobook 基本設計書
 
-**バージョン**: 1.3.0
-**最終更新**: 2026-07-01
+**バージョン**: 1.4.0
+**最終更新**: 2026-06-30
 **対象プロジェクト**: [Recobook](../README.MD)
 
 ---
@@ -28,7 +28,7 @@
 
 ### 1.2 目的
 
-ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は OpenBD API から自動取得し、端末内にローカル保存する。登録後は詳細画面から貸出状態と貸出先名を管理できる。
+ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は OpenBD API から自動取得し、端末内にローカル保存する。登録後は詳細画面から貸出状態と貸出先名を管理でき、管理画面からバックアップや共有向け出力も行える。
 
 ### 1.3 対応プラットフォーム
 
@@ -77,19 +77,19 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | ISBN 形式 | 10 桁または 13 桁のみ。ハイフン・スペースは正規化時に除去される |
 | テーマ | ライト / ダーク を手動切替。システムテーマ連動は起動時のデフォルト値のみ |
 | 多言語対応 | UI 文字列は英語のみ（strings.xml で管理、将来の多言語化は可能な構造） |
-| データバックアップ | Android の自動バックアップ設定に依存（明示的なバックアップ機能なし） |
+| データバックアップ | 管理画面から手動バックアップ / 復元が可能。端末間の自動同期はなし |
 
 ---
 
 ## 3. 画面一覧
 
-本アプリは **単一路線の Compose 画面切替** 構成である。外部ナビゲーションライブラリは使わず、`selectedBookId` の状態で一覧表示と詳細表示を切り替える。
+本アプリは **単一路線の Compose 画面切替** 構成である。外部ナビゲーションライブラリは使わず、`AppScreen`（`Shelf` / `Details` / `Management`）の状態で本棚一覧・詳細表示・管理画面を切り替える。
 
 ### 3.1 本棚一覧表示
 
 ```
 ┌─────────────────────────────────────┐
-│  Recobook                [Theme]    │  ← HeaderRow
+│  Recobook       [Manage] [Theme]    │  ← HeaderRow
 │  Your shelf, cataloged.             │
 ├─────────────────────────────────────┤
 │  ┌─────────────────────────────┐   │
@@ -134,11 +134,36 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 └─────────────────────────────────────┘
 ```
 
+### 3.3 管理画面
+
+```
+┌─────────────────────────────────────┐
+│  [Back to shelf]  Manage            │
+├─────────────────────────────────────┤
+│  Overview                           │
+│  Books                  120         │
+│  Loaned                 8           │
+│  Borrower history       23          │
+├─────────────────────────────────────┤
+│  Backup                             │
+│  JSONL backup for restore           │
+│  [Export backup] [Import backup]    │
+├─────────────────────────────────────┤
+│  Books JSONL                        │
+│  One book per line with loanInfo    │
+│  [Export books JSONL]               │
+├─────────────────────────────────────┤
+│  Shareable shelf                    │
+│  Borrower names are hidden          │
+│  [Export Markdown] [Export CSV]     │
+└─────────────────────────────────────┘
+```
+
 #### 画面要素の詳細
 
 | コンポーネント | 役割 | 表示条件 |
 |---|---|---|
-| `HeaderRow` | アプリ名・タグライン・テーマ切替ボタン | 一覧表示時 |
+| `HeaderRow` | アプリ名・タグライン・管理画面ボタン・テーマ切替ボタン | 一覧表示時 |
 | `IsbnInputCard` | ISBN テキストフィールド・検索ボタン・スキャンボタン | 一覧表示時 |
 | Scan ボタン | バーコードカメラ起動 | 一覧表示かつ `IsbnScanner.isAvailable == true`（Android のみ） |
 | 検索ボタン | ローディングインジケーター兼用 | 一覧表示時（検索中は `CircularProgressIndicator` に切替） |
@@ -146,7 +171,8 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | `BookList` | 登録書籍一覧（ストア保存順・手動並べ替え可能） | `books.isNotEmpty()` のとき |
 | `BookCard` | ドラッグハンドル・書影・タイトル・著者・出版社・出版日・ISBN・貸出中バッジ・削除ボタン | 各書籍エントリ |
 | `BookDetailScreen` | 書誌詳細・貸出状態編集・貸出先履歴候補・削除ボタン | 書籍カードをタップしたとき |
-| Snackbar | 操作結果メッセージ | 検索・追加・更新・削除・貸出更新・エラー時 |
+| `ManagementScreen` | バックアップのエクスポート / インポート、書籍 JSONL 出力、Markdown / CSV 出力、件数サマリー | `Manage` を押したとき |
+| Snackbar | 操作結果メッセージ | 検索・追加・更新・削除・貸出更新・インポート・エラー時 |
 
 #### Snackbar メッセージ一覧
 
@@ -159,8 +185,11 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | 貸出先保存成功 | `Saved lending details.` |
 | 返却処理成功 | `Marked as available.` |
 | 書籍削除成功 | `Removed from your shelf.` |
+| バックアップ JSONL 取り込み成功 | `Imported {n} books from backup.` |
+| 書籍 JSONL 取り込み成功 | `Imported {n} books from books JSONL.` |
 | 該当書籍なし | `No book found for that ISBN.` |
 | 通信エラー等 | API エラーメッセージをそのまま表示 |
+| ファイル入出力エラー | `Failed to export file.` / `Failed to import file.` / 解析エラーメッセージ |
 
 ---
 
@@ -217,6 +246,18 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | F-19 | 起動時自動読み込み | アプリ起動時に既存データを自動復元 |
 | F-20 | リアルタイム同期 | KStore の `Flow` により UI とストレージが常時同期 |
 
+### 4.6 管理・データ入出力
+
+| # | 機能 | 説明 |
+|---|---|---|
+| F-27 | 管理画面表示 | 一覧ヘッダーの `Manage` から管理画面を開く |
+| F-28 | フルバックアップ出力 | `meta` / `borrower` / `book` レコードの JSONL を出力。書籍データ・貸出状態・貸出先履歴を含む |
+| F-29 | バックアップ復元 | JSONL を読み込み、現在の本棚と貸出先履歴を全置換で復元。バックアップ JSONL と書籍 JSONL の両形式を受け付ける |
+| F-30 | 書籍 JSONL 出力 | `Book` を 1 行 1 レコードで JSONL 出力し、`loanInfo` を保持する |
+| F-31 | 共有用 Markdown 出力 | タイトル・著者・出版社・出版日・ISBN・貸出状態を Markdown テーブルで出力し、貸出先名は含めない |
+| F-32 | 共有用 CSV 出力 | タイトル・著者・出版社・出版日・ISBN・貸出状態を CSV で出力し、貸出先名は含めない |
+| F-33 | 管理サマリー表示 | 登録書籍数・貸出中冊数・貸出先履歴数を表示する |
+
 ---
 
 ## 5. アーキテクチャ
@@ -227,11 +268,12 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 ┌──────────────────────────────────────────────────────────┐
 │                  Presentation Layer                       │
 │  App.kt（Compose UI）                                     │
-│  ├── HeaderRow        テーマ切替                          │
+│  ├── HeaderRow        管理画面遷移・テーマ切替            │
 │  ├── IsbnInputCard    ISBN 入力・スキャン起動              │
 │  ├── BookList         書籍一覧（LazyColumn + ドラッグ）   │
 │  ├── BookCard         書籍カード 1 件 + ドラッグハンドル  │
 │  ├── BookDetailScreen 書誌詳細・貸出管理                  │
+│  ├── ManagementScreen 管理・バックアップ・共有出力        │
 │  ├── DragHandleIcon   2×3 ドットのドラッグ操作ガイド      │
 │  └── EmptyState       未登録時プレースホルダー            │
 └────────────────────────┬─────────────────────────────────┘
@@ -244,28 +286,27 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │  ├── addByIsbn(isbn)                  検索・追加・更新    │
 │  ├── removeById(id)                   削除                │
 │  ├── reorderBooks(from, to)           並べ替え            │
-│  └── updateLoan(id, borrower)         貸出状態更新        │
+│  ├── updateLoan(id, borrower)         貸出状態更新        │
+│  ├── exportBackupJsonl()              フルバックアップ出力│
+│  ├── exportBooksJsonl()               書籍 JSONL 出力     │
+│  ├── exportShareMarkdown()            共有用 Markdown     │
+│  ├── exportShareCsv()                 共有用 CSV          │
+│  └── importBackupJsonl(lines)         バックアップ復元    │
 └──────────────┬────────────────────────┬──────────────────┘
-               │ suspend fun            │ KStore API
+               │ suspend fun            │ KStore API / expect-actual
 ┌──────────────▼──────────┐  ┌─────────▼────────────────────┐
-│   Data Layer             │  │   Storage Layer                   │
+│   Data Layer             │  │   Storage & Platform Layer        │
 │   BooksApi               │  │   KStore<BookCollection>          │
 │   ・fetchByIsbn(isbn)    │  │   KStore<BorrowerHistory>         │
-│                          │  │   ├── Android  : filesDir/        │
-│   OpenBD API             │  │   │              recobook_books   │
-│   (HTTPS / Ktor)         │  │   │              .json /          │
-│                          │  │   │              recobook_        │
-└──────────────────────────┘  │   │              borrowers.json   │
-                               │   ├── iOS       : Documents/     │
-                               │   │              recobook/       │
-                               │   │              books.json /    │
-                               │   │              borrowers.json  │
-                               │   ├── Desktop  : ~/.recobook/    │
-                               │   │              books.json /    │
-                               │   │              borrowers.json  │
-                               │   └── Web      : localStorage    │
-                               │              ["recobook_books"]  │
-                               │              ["recobook_borrowers"]│
+│                          │  │   TextFileTransferManager         │
+│   OpenBD API             │  │   ├── Android  : filesDir/ + SAF  │
+│   (HTTPS / Ktor)         │  │   ├── iOS       : Documents/ +    │
+│                          │  │   │              UIDocumentPicker /│
+└──────────────────────────┘  │   │              share sheet       │
+                              │   ├── Desktop  : ~/.recobook/ +   │
+                              │   │              JFileChooser      │
+                              │   └── Web      : localStorage +    │
+                              │              file input / Blob DL  │
                                └──────────────────────────────────┘
 ```
 
@@ -275,13 +316,13 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 Recobook/
 ├── sharedUI/                        ← Kotlin Multiplatform ライブラリ
 │   └── src/
-│       ├── commonMain/              共通コード（UI・Repository・Api・Model）
-│       ├── androidMain/             Android 固有（BookStoreProvider・IsbnScanner）
-│       ├── iosMain/                 iOS 固有（BookStoreProvider・IsbnScanner・エントリポイント）
-│       ├── jvmMain/                 Desktop 固有（BookStoreProvider・IsbnScanner）
-│       ├── webMain/                 Web 固有（BookStoreProvider・IsbnScanner）
+│       ├── commonMain/              共通コード（UI・Repository・Api・Model・TextFileTransfer）
+│       ├── androidMain/             Android 固有（BookStoreProvider・IsbnScanner・TextFileTransfer）
+│       ├── iosMain/                 iOS 固有（BookStoreProvider・IsbnScanner・TextFileTransfer・エントリポイント）
+│       ├── jvmMain/                 Desktop 固有（BookStoreProvider・IsbnScanner・TextFileTransfer）
+│       ├── webMain/                 Web 固有（BookStoreProvider・IsbnScanner・TextFileTransfer）
 │       ├── commonTest/              共通テスト（IsbnUtils・BooksApi）
-│       ├── jvmTest/                 JVM テスト（BooksRepository・BookStoreProvider）
+│       ├── jvmTest/                 JVM テスト（BooksRepository・Transfer・BookStoreProvider）
 │       └── iosTest/                 iOS テスト（BookStoreProvider）
 ├── androidApp/                      Android アプリエントリポイント
 ├── desktopApp/                      Desktop アプリエントリポイント
@@ -298,12 +339,13 @@ Recobook/
 | `createBookStore()` | `expect fun` | `filesDir` を使用 | `NSDocumentDirectory` を使用 | `user.home` を使用 | `localStorage` を使用 |
 | `createBorrowerHistoryStore()` | `expect fun` | `filesDir` を使用 | `NSDocumentDirectory` を使用 | `user.home` を使用 | `localStorage` を使用 |
 | `rememberIsbnScanner()` | `@Composable expect fun` | ZXing でバーコードスキャン | スキャン不可（`isAvailable = false`） | スキャン不可 | スキャン不可 |
+| `rememberTextFileTransferManager()` | `@Composable expect fun` | Storage Access Framework で保存 / 読み込み | `UIDocumentPicker` と share sheet を使用 | `JFileChooser` を使用 | `<input type="file">` と Blob ダウンロードを使用 |
 
 ### 5.4 状態管理
 
 UI 状態は Compose の `remember` / `mutableStateOf` で管理する。永続データは `KStore.updates` が返す `Flow<BookCollection?>` と `Flow<BorrowerHistory?>` を `collectAsState` で購読し、自動的に UI へ反映される。
 
-画面遷移は `selectedBookId` により制御し、null のとき本棚一覧、書籍 ID が入っているとき詳細表示を描画する。
+画面遷移は `AppScreen` により制御し、`Shelf` が本棚一覧、`Details(bookId)` が詳細表示、`Management` が管理画面を表す。ファイルインポート完了時は `rememberTextFileTransferManager` のコールバックから `BooksRepository.importBackupJsonl` を呼び出す。
 
 ドラッグ&ドロップ並べ替えでは、`BookList` がローカルの `SnapshotStateList<Book>` を保持し、ドラッグ操作中は即座にローカルリストを更新することで視覚的フィードバックを実現する。ドラッグ終了時に `BooksRepository.reorderBooks` を呼び出してストアへ永続化する。
 
@@ -331,7 +373,7 @@ BookList の dragItems (SnapshotStateList<Book>)
 
 ### 6.1 ストレージ形式
 
-リレーショナルデータベース（SQLite 等）は使用しない。書籍データと貸出先履歴は **JSON ファイル**（または Web の場合は `localStorage` の単一エントリ）として保存される。
+リレーショナルデータベース（SQLite 等）は使用しない。書籍データと貸出先履歴は **JSON ファイル**（または Web の場合は `localStorage` の単一エントリ）として保存される。外部向けの入出力は JSONL / Markdown / CSV を用途別に使い分ける。
 
 シリアライズには `kotlinx.serialization` を使用。読み込み時は `ignoreUnknownKeys = true` / `isLenient = true` で後方互換性を確保している。
 
@@ -376,7 +418,41 @@ BookList の dragItems (SnapshotStateList<Book>)
 |---|---|---|
 | `names` | `List<String>` | 入力済み貸出先名の一覧。空白除去・重複排除・名前順ソート済みで保存 |
 
-### 6.3 保存先パス
+### 6.3 外部入出力形式
+
+#### バックアップ JSONL（フルバックアップ）
+
+大量書籍でも扱いやすいよう、配列 JSON ではなく **行指向の JSONL** を採用する。1 行につき 1 レコードで、出力順は `meta` → `borrower*` → `book*`。
+
+| レコード種別 | 例 | 用途 |
+|---|---|---|
+| `meta` | `{"type":"meta","version":1,"format":"recobook-backup-jsonl","exportedAt":"..."}` | 形式識別・バージョン管理 |
+| `borrower` | `{"type":"borrower","name":"Alice"}` | 貸出先履歴の保持 |
+| `book` | `{"type":"book","book":{...}}` | 書籍本体。`loanInfo` を含む |
+
+- インポート時は現在の本棚データと貸出先履歴を **全置換** する
+- 空行は無視し、未知の JSON フィールドは `ignoreUnknownKeys = true` で読み飛ばす
+- `meta.version` が将来バージョンの場合は取り込みを拒否する
+
+#### 書籍 JSONL
+
+| 項目 | 内容 |
+|---|---|
+| 1 行の単位 | `Book` 1 件 |
+| 含む内容 | 書誌情報・`addedAt`・`loanInfo` |
+| 用途 | 書籍データのみのバックアップ / 移行 |
+| 取り込み | `importBackupJsonl()` が同じ入口で受け付ける |
+
+#### 共有用 Markdown / CSV
+
+| 項目 | 内容 |
+|---|---|
+| 出力対象 | タイトル・著者・出版社・出版日・ISBN・貸出状態 |
+| 貸出状態 | `Available` / `Lent out` |
+| 除外情報 | **貸出先名は出力しない** |
+| 用途 | 他人に見せる蔵書一覧の共有 |
+
+### 6.4 保存先パス
 
 | プラットフォーム | 書籍データ | 貸出先履歴 |
 |---|---|---|
@@ -387,7 +463,7 @@ BookList の dragItems (SnapshotStateList<Book>)
 
 Android・iOS・Desktop のパスは、アプリ初回起動時にディレクトリが存在しない場合に自動作成される。
 
-### 6.4 重複検出ロジック
+### 6.5 重複検出ロジック
 
 追加時に既存コレクション内を走査し、以下の条件を **いずれか**が満たす場合を既存エントリと判定する（先着優先）。
 
@@ -470,6 +546,8 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 
 - ユーザーの個人情報は一切収集・送信しない
 - 貸出先名はユーザーが任意入力できるが、デバイスローカルにのみ保存され、外部サーバーに送信されない
+- 共有用 Markdown / CSV エクスポートでは貸出先名を明示的に除外し、貸出中かどうかのみを出力する
+- フルバックアップ JSONL と書籍 JSONL には復元性のため `loanInfo` を含めるため、所有者が扱う前提のデータとする
 - 書籍データはデバイスローカルにのみ保存され、外部サーバーに送信されない
 - OpenBD API へのリクエストには ISBN のみが含まれ、ユーザー識別情報は含まれない
 - アプリは広告 ID・デバイス ID・位置情報などのトラッキング情報を使用しない
@@ -700,7 +778,7 @@ sequenceDiagram
     participant App as App State
 
     User->>Detail: 書籍カードをタップ
-    Detail->>App: selectedBookId ← book.id
+    Detail->>App: screen ← AppScreen.Details(book.id)
     App-->>User: 詳細表示を描画
 
     alt 貸出先を登録 / 更新
@@ -720,5 +798,51 @@ sequenceDiagram
         Note over Repo,HistoryStore: 履歴ストアは更新しない
         BookStore-)App: books Flow emit
         App-->>User: Snackbar: "Marked as available."
+    end
+```
+
+---
+
+### 9.4 管理画面のエクスポート / インポート
+
+管理画面でのバックアップ出力・共有出力・復元の流れを示す。
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as App<br/>(Compose UI)
+    participant Manage as ManagementScreen
+    participant Transfer as TextFileTransferManager
+    participant Repo as BooksRepository
+    participant BookStore as KStore<BookCollection>
+    participant HistoryStore as KStore<BorrowerHistory>
+    participant OS as OS File UI
+
+    User->>App: [Manage] をタップ
+    App->>App: screen ← AppScreen.Management
+    App-->>User: 管理画面を描画
+
+    alt バックアップ / 共有出力
+        User->>Manage: Export 系ボタンをタップ
+        Manage->>Repo: exportBackupJsonl() / exportBooksJsonl() / exportShareMarkdown() / exportShareCsv()
+        Repo->>BookStore: 現在の書籍一覧を取得
+        Repo->>HistoryStore: 貸出先履歴を取得（バックアップ時）
+        Repo-->>Manage: LineExportFile
+        Manage->>Transfer: exportFile(lineExportFile)
+        Transfer->>OS: 保存ダイアログ / share sheet / Blob download
+        OS-->>User: ファイル保存または共有
+    else バックアップ復元
+        User->>Manage: [Import backup] をタップ
+        Manage->>Transfer: importFile(JSONL request)
+        Transfer->>OS: ファイル選択 UI を表示
+        User->>OS: JSONL ファイルを選択
+        OS-->>Transfer: file content
+        Transfer-->>App: onFileImported(content)
+        App->>Repo: importBackupJsonl(lines)
+        Repo->>BookStore: set(BookCollection(importedBooks))
+        Repo->>HistoryStore: set(BorrowerHistory(normalizedNames))
+        BookStore-)App: books Flow emit
+        HistoryStore-)App: borrowerHistory Flow emit
+        App-->>User: Snackbar: "Imported {n} books from ..."
     end
 ```

@@ -1,5 +1,22 @@
 <resources>
     <string name="app_name">Recobook</string>
+    <string name="admin_backup_description">Create a full line-oriented JSONL backup with metadata, borrower history, and every book entry. This format is designed to stay practical as your shelf grows.</string>
+    <string name="admin_backup_import_warning">Import replaces the current shelf and saved borrower history.</string>
+    <string name="admin_backup_title">Backup and restore</string>
+    <string name="admin_book_count">Books</string>
+    <string name="admin_borrower_history_count">Saved borrower names</string>
+    <string name="admin_export_backup">Export backup</string>
+    <string name="admin_export_books_jsonl">Export books JSONL</string>
+    <string name="admin_export_csv">Export CSV</string>
+    <string name="admin_export_markdown">Export Markdown</string>
+    <string name="admin_import_backup">Import backup</string>
+    <string name="admin_jsonl_books_description">Export one JSON record per book. Loan status is included for every entry.</string>
+    <string name="admin_jsonl_books_title">Raw data export</string>
+    <string name="admin_loaned_count">Loaned</string>
+    <string name="admin_manage">Manage</string>
+    <string name="admin_overview_title">Overview</string>
+    <string name="admin_share_description">Create a shareable shelf list in Markdown or CSV. Loaned books are marked, but borrower names are excluded.</string>
+    <string name="admin_share_title">Shareable shelf export</string>
     <string name="title_tagline">Your shelf, cataloged.</string>
     <string name="book_details_title">Book details</string>
     <string name="back_to_list">Back to shelf</string>

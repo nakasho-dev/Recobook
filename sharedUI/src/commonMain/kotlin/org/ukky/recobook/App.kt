@@ -42,6 +42,12 @@ import org.ukky.recobook.theme.AppTheme
 import org.ukky.recobook.theme.LocalThemeIsDark
 import recobook.sharedui.generated.resources.*
 
+private sealed interface AppScreen {
+    data object Shelf : AppScreen
+    data object Management : AppScreen
+    data class Details(val bookId: String) : AppScreen
+}
+
 @Preview
 @Composable
 fun App(
@@ -56,24 +62,60 @@ fun App(
     val snackbarHostState = remember { SnackbarHostState() }
     var isbnInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var selectedBookId by remember { mutableStateOf<String?>(null) }
+    var screen by remember { mutableStateOf<AppScreen>(AppScreen.Shelf) }
 
     val scanner = rememberIsbnScanner { scanned ->
         isbnInput = scanned
         coroutineScope.launch { submitIsbn(scanned, repository, snackbarHostState, onLoading = { isLoading = it }) }
     }
 
-    LaunchedEffect(books, selectedBookId) {
-        if (selectedBookId != null && books.none { it.id == selectedBookId }) {
-            selectedBookId = null
-        }
+    val fileTransferManager = rememberTextFileTransferManager(
+        onFileImported = { importedFile ->
+            coroutineScope.launch {
+                try {
+                    val summary = repository.importBackupJsonl(importedFile.content.lineSequence())
+                    val sourceLabel = if (summary.format == BackupImportFormat.BackupJsonl) {
+                        "backup"
+                    } else {
+                        "books JSONL"
+                    }
+                    snackbarHostState.showSnackbar(
+                        "Imported ${summary.importedBooks} books from $sourceLabel.",
+                    )
+                } catch (error: Exception) {
+                    snackbarHostState.showSnackbar(error.message ?: "Import failed.")
+                }
+            }
+        },
+        onError = { message ->
+            coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+        },
+    )
+
+    val selectedBook = when (val currentScreen = screen) {
+        is AppScreen.Details -> books.firstOrNull { it.id == currentScreen.bookId }
+        else -> null
     }
 
-    val selectedBook = books.firstOrNull { it.id == selectedBookId }
+    LaunchedEffect(books, screen) {
+        if (screen is AppScreen.Details && selectedBook == null) {
+            screen = AppScreen.Shelf
+        }
+    }
 
     fun onSubmit(raw: String = isbnInput) {
         coroutineScope.launch {
             submitIsbn(raw, repository, snackbarHostState, onLoading = { isLoading = it })
+        }
+    }
+
+    fun launchExport(buildFile: suspend () -> LineExportFile) {
+        coroutineScope.launch {
+            try {
+                fileTransferManager.exportFile(buildFile())
+            } catch (error: Exception) {
+                snackbarHostState.showSnackbar(error.message ?: "Export failed.")
+            }
         }
     }
 
@@ -100,62 +142,82 @@ fun App(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                if (selectedBook == null) {
-                    HeaderRow()
-                    IsbnInputCard(
-                        isbnInput = isbnInput,
-                        isLoading = isLoading,
-                        scannerAvailable = scanner.isAvailable,
-                        onIsbnChanged = { isbnInput = it },
-                        onScan = { scanner.launch() },
-                        onSubmit = { onSubmit() },
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                    if (books.isEmpty()) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            EmptyState()
+                when (screen) {
+                    AppScreen.Shelf -> {
+                        HeaderRow(onOpenManagement = { screen = AppScreen.Management })
+                        IsbnInputCard(
+                            isbnInput = isbnInput,
+                            isLoading = isLoading,
+                            scannerAvailable = scanner.isAvailable,
+                            onIsbnChanged = { isbnInput = it },
+                            onScan = { scanner.launch() },
+                            onSubmit = { onSubmit() },
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        if (books.isEmpty()) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                EmptyState()
+                            }
+                        } else {
+                            BookList(
+                                books = books,
+                                imageLoader = imageLoader,
+                                onOpenDetails = { book -> screen = AppScreen.Details(book.id) },
+                                onRemove = { book ->
+                                    coroutineScope.launch {
+                                        repository.removeById(book.id)
+                                        snackbarHostState.showSnackbar("Removed from your shelf.")
+                                    }
+                                },
+                                onReorder = { from, to -> coroutineScope.launch { repository.reorderBooks(from, to) } },
+                                modifier = Modifier.weight(1f),
+                            )
                         }
-                    } else {
-                        BookList(
+                    }
+
+                    is AppScreen.Details -> {
+                        if (selectedBook != null) {
+                            BookDetailScreen(
+                                book = selectedBook,
+                                imageLoader = imageLoader,
+                                borrowerHistory = borrowerHistory,
+                                onBack = { screen = AppScreen.Shelf },
+                                onUpdateLoan = { borrowerName ->
+                                    coroutineScope.launch {
+                                        repository.updateLoan(selectedBook.id, borrowerName)
+                                        val message = if (borrowerName.isNullOrBlank()) {
+                                            "Marked as available."
+                                        } else {
+                                            "Saved lending details."
+                                        }
+                                        snackbarHostState.showSnackbar(message)
+                                    }
+                                },
+                                onRemove = {
+                                    coroutineScope.launch {
+                                        repository.removeById(selectedBook.id)
+                                        screen = AppScreen.Shelf
+                                        snackbarHostState.showSnackbar("Removed from your shelf.")
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+
+                    AppScreen.Management -> {
+                        ManagementScreen(
                             books = books,
-                            imageLoader = imageLoader,
-                            onOpenDetails = { book -> selectedBookId = book.id },
-                            onRemove = { book ->
-                                coroutineScope.launch {
-                                    repository.removeById(book.id)
-                                    snackbarHostState.showSnackbar("Removed from your shelf.")
-                                }
-                            },
-                            onReorder = { from, to -> coroutineScope.launch { repository.reorderBooks(from, to) } },
+                            borrowerHistoryCount = borrowerHistory.size,
+                            onBack = { screen = AppScreen.Shelf },
+                            onExportBackup = { launchExport { repository.exportBackupJsonl() } },
+                            onImportBackup = { fileTransferManager.importFile(backupImportRequest) },
+                            onExportBooksJsonl = { launchExport { repository.exportBooksJsonl() } },
+                            onExportMarkdown = { launchExport { repository.exportShareMarkdown() } },
+                            onExportCsv = { launchExport { repository.exportShareCsv() } },
                             modifier = Modifier.weight(1f),
                         )
                     }
-                } else {
-                    BookDetailScreen(
-                        book = selectedBook,
-                        imageLoader = imageLoader,
-                        borrowerHistory = borrowerHistory,
-                        onBack = { selectedBookId = null },
-                        onUpdateLoan = { borrowerName ->
-                            coroutineScope.launch {
-                                repository.updateLoan(selectedBook.id, borrowerName)
-                                val message = if (borrowerName.isNullOrBlank()) {
-                                    "Marked as available."
-                                } else {
-                                    "Saved lending details."
-                                }
-                                snackbarHostState.showSnackbar(message)
-                            }
-                        },
-                        onRemove = {
-                            coroutineScope.launch {
-                                repository.removeById(selectedBook.id)
-                                selectedBookId = null
-                                snackbarHostState.showSnackbar("Removed from your shelf.")
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
                 }
             }
         }
@@ -163,7 +225,9 @@ fun App(
 }
 
 @Composable
-private fun HeaderRow() {
+private fun HeaderRow(
+    onOpenManagement: () -> Unit,
+) {
     val titleFont = FontFamily(Font(Res.font.IndieFlower_Regular))
     var isDark by LocalThemeIsDark.current
     Row(
@@ -182,6 +246,9 @@ private fun HeaderRow() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        TextButton(onClick = onOpenManagement) {
+            Text(stringResource(Res.string.admin_manage))
         }
         TextButton(onClick = { isDark = !isDark }) {
             Text(stringResource(Res.string.theme))
@@ -825,3 +892,12 @@ private suspend fun submitIsbn(
         onLoading(false)
     }
 }
+
+private val backupImportRequest = TextImportRequest(
+    acceptedExtensions = listOf("jsonl", "json", "txt"),
+    acceptedMimeTypes = listOf(
+        "application/x-ndjson",
+        "application/json",
+        "text/plain",
+    ),
+)
