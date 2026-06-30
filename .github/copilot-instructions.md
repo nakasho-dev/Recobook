@@ -25,7 +25,7 @@ There is no dedicated lint/format task configured in the checked-in Gradle build
 ## High-level architecture
 
 - `sharedUI` is the real application module. `sharedUI/src/commonMain/kotlin/org/ukky/recobook/App.kt` owns the Compose UI, creates the `BooksRepository`, subscribes to `repository.books`, and wires user actions to repository calls.
-- `BooksRepository` is the main state boundary: UI code does not talk to storage or Google Books directly. The flow is **ISBN input/scanner -> normalize/validate -> `BooksRepository.addByIsbn()` -> `BooksApi.fetchByIsbn()` -> `KStore<BookCollection>` -> `books: Flow<List<Book>>` -> `collectAsState()` in `App()`**.
+- `BooksRepository` is the main state boundary: UI code does not talk to storage or OpenBD directly. The flow is **ISBN input/scanner -> normalize/validate -> `BooksRepository.addByIsbn()` -> `BooksApi.fetchByIsbn()` -> `KStore<BookCollection>` -> `books: Flow<List<Book>>` -> `collectAsState()` in `App()`**.
 - Platform app modules are intentionally thin hosts:
   - `androidApp` only provides the Android `Activity` and initializes `AndroidContextHolder`.
   - `desktopApp` and `webApp` just launch `App()`.

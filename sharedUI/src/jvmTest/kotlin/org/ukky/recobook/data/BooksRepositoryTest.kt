@@ -57,7 +57,7 @@ class BooksRepositoryTest {
         val result = repo.addByIsbn("9784873119038")
         assertIs<BookAddResult.Success>(result)
         assertEquals(false, result.updated)
-        assertEquals("test-vol-id", result.book.id)
+        assertEquals("9784873119038", result.book.id)
     }
 
     @Test
@@ -71,7 +71,7 @@ class BooksRepositoryTest {
 
         val books = repo.books.first()
         assertEquals(2, books.size)
-        assertEquals("test-vol-id", books[0].id)
+        assertEquals("9784873119038", books[0].id)
         assertEquals("existing", books[1].id)
     }
 
@@ -82,7 +82,7 @@ class BooksRepositoryTest {
         val store = newStore()
         val originalAddedAt = 12345L
         store.set(BookCollection(listOf(
-            Book(id = "test-vol-id", isbn = "9784873119038", title = "旧タイトル", addedAt = originalAddedAt)
+            Book(id = "9784873119038", isbn = "9784873119038", title = "旧タイトル", addedAt = originalAddedAt)
         )))
 
         val repo = BooksRepository(store, mockApi(SINGLE_BOOK_JSON))
@@ -149,7 +149,7 @@ class BooksRepositoryTest {
         val books = repo.books.first()
         assertEquals(2, books.size)
         assertEquals("first", books[0].id)
-        assertEquals("test-vol-id", books[1].id)
+        assertEquals("9784873119038", books[1].id)
         assertEquals("テスト書籍", books[1].title)
         assertEquals(originalAddedAt, books[1].addedAt)
     }
@@ -353,24 +353,38 @@ class BooksRepositoryTest {
 
     companion object {
         val SINGLE_BOOK_JSON = """
-            {
-              "totalItems": 1,
-              "items": [
-                {
-                  "id": "test-vol-id",
-                  "volumeInfo": {
-                    "title": "テスト書籍",
-                    "authors": ["著者１"],
-                    "industryIdentifiers": [
-                      {"type": "ISBN_13", "identifier": "9784873119038"},
-                      {"type": "ISBN_10", "identifier": "4873119030"}
+            [
+              {
+                "onix": {
+                  "RecordReference": "9784873119038",
+                  "ProductIdentifier": {
+                    "IDValue": "9784873119038"
+                  },
+                  "DescriptiveDetail": {
+                    "TitleDetail": {
+                      "TitleElement": {
+                        "TitleText": {
+                          "content": "テスト書籍"
+                        }
+                      }
+                    },
+                    "Contributor": [
+                      {
+                        "PersonName": {
+                          "content": "著者１"
+                        }
+                      }
                     ]
                   }
+                },
+                "summary": {
+                  "isbn": "9784873119038",
+                  "title": "テスト書籍"
                 }
-              ]
-            }
+              }
+            ]
         """.trimIndent()
 
-        val EMPTY_JSON = """{"totalItems": 0, "items": []}"""
+        val EMPTY_JSON = "[null]"
     }
 }

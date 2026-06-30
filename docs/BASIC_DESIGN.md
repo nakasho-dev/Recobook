@@ -28,7 +28,7 @@
 
 ### 1.2 目的
 
-ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は Google Books API から自動取得し、端末内にローカル保存する。
+ISBN（書籍識別番号）を入力またはバーコードスキャンで書籍を検索し、個人の本棚を管理するアプリ。書籍情報は OpenBD API から自動取得し、端末内にローカル保存する。
 
 ### 1.3 対応プラットフォーム
 
@@ -63,7 +63,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | 項目 | 内容 |
 |---|---|
 | ネットワーク | 書籍検索はインターネット接続が必要（ローカル登録済みデータの閲覧・削除はオフライン可） |
-| Google Books API | 認証不要の公開 API を使用。1 日あたりの無料クォータは 1,000 リクエスト（2026 年 3 月時点） |
+| OpenBD API | 認証不要の公開 API を使用。ISBN を指定して書誌情報を取得する |
 | カメラ | バーコードスキャンは Android のみ対応。カメラなし端末でも他機能は利用可 |
 | ストレージ | 書籍データは各端末のローカルストレージに保存。クラウド同期なし |
 
@@ -73,7 +73,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 |---|---|
 | ユーザー認証 | 実装なし。ユーザーアカウント不要 |
 | データ同期 | 端末間同期なし。ローカル保存のみ |
-| オフライン検索 | 不可（Google Books API への通信が必要） |
+| オフライン検索 | 不可（OpenBD API への通信が必要） |
 | ISBN 形式 | 10 桁または 13 桁のみ。ハイフン・スペースは正規化時に除去される |
 | テーマ | ライト / ダーク を手動切替。システムテーマ連動は起動時のデフォルト値のみ |
 | 多言語対応 | UI 文字列は英語のみ（strings.xml で管理、将来の多言語化は可能な構造） |
@@ -147,9 +147,9 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 | F-02 | ISBN 正規化 | 入力値から数字と `X` 以外を除去し大文字化（ハイフン・スペース除去） |
 | F-03 | ISBN 桁数バリデーション | 正規化後に 10 桁または 13 桁でない場合はエラー通知 |
 | F-04 | バーコードスキャン | カメラで ISBN バーコードを読み取り自動入力（**Android のみ**） |
-| F-05 | Google Books API 検索 | `https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}&maxResults=1` に GET リクエスト |
-| F-06 | 書籍データ変換 | API レスポンスから `Book` モデルに変換。ISBN-13 を正規 ISBN として優先採用 |
-| F-07 | サムネイル HTTPS 化 | `thumbnail` URL の `http://` を `https://` に強制変換 |
+| F-05 | OpenBD API 検索 | `https://api.openbd.jp/v1/get?isbn={isbn}` に GET リクエスト |
+| F-06 | 書籍データ変換 | OpenBD の `summary` / `onix` から `Book` モデルに変換。ISBN-13 を正規 ISBN として優先採用 |
+| F-07 | 書影 URL HTTPS 化 | `summary.cover` または ONIX `SupportingResource.ResourceLink` の `http://` を `https://` に強制変換 |
 | F-08 | タイトルフォールバック | API レスポンスのタイトルが空の場合は ISBN を代替タイトルとして使用 |
 
 ### 4.2 重複検出・更新
@@ -218,7 +218,7 @@ ISBN（書籍識別番号）を入力またはバーコードスキャンで書�
 │   BooksApi               │  │   KStore<BookCollection>      │
 │   ・fetchByIsbn(isbn)    │  │   ├── Android  : filesDir/    │
 │                          │  │   │              recobook_     │
-│   Google Books API       │  │   │              books.json    │
+│   OpenBD API             │  │   │              books.json    │
 │   (HTTPS / Ktor)         │  │   ├── iOS       : Documents/  │
 │                          │  │   │              recobook/     │
 └──────────────────────────┘  │   │              books.json    │
@@ -306,7 +306,7 @@ BookList の dragItems (SnapshotStateList<Book>)
 
 | フィールド | 型 | 制約 | 説明 |
 |---|---|---|---|
-| `id` | `String` | NOT NULL | Google Books ボリューム ID（存在しない場合は正規 ISBN） |
+| `id` | `String` | NOT NULL | 正規 ISBN（`summary.isbn` を優先し、なければ入力値を採用） |
 | `isbn` | `String` | NOT NULL | 正規 ISBN（ISBN-13 優先、次いで ISBN-10、最終的に入力値） |
 | `isbn10` | `String?` | NULL 許可 | ISBN-10 |
 | `isbn13` | `String?` | NULL 許可 | ISBN-13 |
@@ -363,7 +363,7 @@ Android・iOS・Desktop のパスは、アプリ初回起動時にディレク�
 | 対象 | 暗号化 | 理由 |
 |---|---|---|
 | ローカルストレージの書籍データ | **なし** | 書籍メタデータは公開情報であり、機密性は低い |
-| API 通信 | **あり（HTTPS）** | Google Books API との通信は TLS で保護される |
+| API 通信 | **あり（HTTPS）** | OpenBD API との通信は TLS で保護される |
 | 書影 URL | **URL レベルで HTTPS 強制** | `http://` プレフィックスを `https://` に変換してから保存・表示 |
 
 ### 7.3 鍵管理
@@ -381,13 +381,13 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 
 ### 7.4 ネットワーク通信
 
-外部通信先は Google Books API と、Google Books API が返す書影 URL のみ。
+外部通信先は OpenBD API と、OpenBD が返す書影 URL のみ。
 
 | エンドポイント | 用途 | 認証 |
 |---|---|---|
-| `https://www.googleapis.com/books/v1/volumes` | ISBN による書籍検索 | 不要（公開 API） |
+| `https://api.openbd.jp/v1/get` | ISBN による書籍検索 | 不要（公開 API） |
 
-書影表示時は、Google Books API のレスポンスに含まれる HTTPS のサムネイル URL に対して追加の GET リクエストを行う。
+書影表示時は、OpenBD API のレスポンスに含まれる `summary.cover` または ONIX `SupportingResource.ResourceLink` に対して追加の GET リクエストを行う。
 
 デバッグ環境では HTTP 通信ログを各プラットフォーム標準ログへ出力する。ログ出力先は Android が Logcat、iOS が NSLog、Desktop が標準出力、Web がブラウザコンソールで、リリース相当環境では無効とする。
 
@@ -400,7 +400,7 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 | 権限 | 用途 | 必須 |
 |---|---|---|
 | `android.permission.CAMERA` | ISBN バーコードスキャン（ZXing） | 任意（`required="false"`） |
-| `android.permission.INTERNET` | Google Books API 通信 | 必須（Ktor の依存関係経由で自動付与） |
+| `android.permission.INTERNET` | OpenBD API 通信 | 必須（Ktor の依存関係経由で自動付与） |
 
 `CAMERA` はランタイムパーミッションであり、スキャン機能の起動時に OS が許可ダイアログを表示する。ユーザーが拒否した場合でも ISBN 手動入力で全機能を利用できる。
 
@@ -412,7 +412,7 @@ Android リリースビルドの署名キーは環境変数経由で管理する
 
 - ユーザーの個人情報は一切収集・送信しない
 - 書籍データはデバイスローカルにのみ保存され、外部サーバーに送信されない
-- Google Books API へのリクエストには ISBN のみが含まれ、ユーザー識別情報は含まれない
+- OpenBD API へのリクエストには ISBN のみが含まれ、ユーザー識別情報は含まれない
 - アプリは広告 ID・デバイス ID・位置情報などのトラッキング情報を使用しない
 
 ---
@@ -426,7 +426,7 @@ Google Play Console のデータセーフティフォームでは以下のよう
 | 質問 | 回答 | 根拠 |
 |---|---|---|
 | ユーザーのデータを収集または共有するか | **いいえ** | 書籍データはローカルにのみ保存。外部送信なし |
-| アプリがデータを収集するか（データセーフティフォーム上） | 該当なし | Google Books API への ISBN 送信はユーザー固有情報を含まないため、収集には該当しない |
+| アプリがデータを収集するか（データセーフティフォーム上） | 該当なし | OpenBD API への ISBN 送信はユーザー固有情報を含まないため、収集には該当しない |
 | データは保護されているか | **はい（転送中の暗号化）** | API 通信は HTTPS |
 
 ### 8.2 CAMERA 権限に関する申告
@@ -444,12 +444,12 @@ Google Play の要件として、新規アプリ・アップデートともに�
 
 本アプリは書籍管理ツールであり、有害コンテンツを含まない。コンテンツレーティングアンケートは「ユーティリティ / 生産性」カテゴリを選択し、**全年齢対象（IARC 3+）** の評価が見込まれる。
 
-### 8.5 Google Books API 利用規約
+### 8.5 OpenBD API 利用上の注意
 
-- Google Books API の利用規約（[Terms of Service](https://developers.google.com/books/terms)）を遵守すること
-- 無料クォータ（1 日 1,000 リクエスト）内での利用に留めること。超過する規模のユーザーベースが想定される場合は課金設定または API キーの設定が必要
-- API から取得した書籍データを再配布・商業利用する場合は別途 Google のポリシーを確認すること
-- 本アプリは取得データを端末内にのみ保存しており、外部配信・再配布は行っていないため、個人利用の範囲では問題ない
+- OpenBD の仕様は [トップページ](https://openbd.jp/#first) と [API データ仕様書](https://openbd.jp/spec/) を参照すること
+- 本アプリは `https://api.openbd.jp/v1/get?isbn=...` のみを使用し、レスポンスのうち `summary` と ONIX の共通書誌情報のみを利用する
+- 「版元ドットコム会員社独自項目」「版元ドットコム独自項目」は利用しない
+- 取得した書誌データを外部サービスへ再配布する場合は、OpenBD 側の公開条件・利用条件を別途確認すること
 
 ### 8.6 In-App Purchases / サブスクリプション
 
@@ -475,7 +475,7 @@ sequenceDiagram
     participant Utils as IsbnUtils
     participant Repo as BooksRepository
     participant Api as BooksApi
-    participant GBooks as Google Books API
+    participant OpenBD as OpenBD API
     participant Store as KStore
 
     alt カメラスキャン（Android のみ）
@@ -509,11 +509,11 @@ sequenceDiagram
 
         App->>Repo: addByIsbn(normalized)
         Repo->>Api: fetchByIsbn(isbn)
-        Api->>GBooks: GET /books/v1/volumes?q=isbn:ISBN&maxResults=1
+        Api->>OpenBD: GET /v1/get?isbn=ISBN
 
-        alt 書籍あり（totalItems ≥ 1）
-            GBooks-->>Api: 200 OK (VolumeResponse JSON)
-            Api->>Api: toBook(fallbackIsbn)<br/>・ISBN-13 を正規 ISBN として優先採用<br/>・thumbnail: http:// → https:// に変換
+        alt 書籍あり（先頭要素が非 null）
+            OpenBD-->>Api: 200 OK (OpenBD JSON 配列)
+            Api->>Api: toBook(fallbackIsbn)<br/>・`summary` / `onix` を優先順で解釈<br/>・ISBN-13 を正規 ISBN として優先採用<br/>・cover/resourceLink: http:// → https:// に変換
             Api-->>Repo: Book
 
             Repo->>Store: store.update（重複チェック → 新コレクション生成）
@@ -533,14 +533,14 @@ sequenceDiagram
             App->>App: books (State) 更新
             App->>App: BookList をストア保存順で再コンポーズ
 
-        else 書籍なし（totalItems = 0）
-            GBooks-->>Api: 200 OK（items: []）
+        else 書籍なし（`[null]`）
+            OpenBD-->>Api: 200 OK（`[null]`）
             Api-->>Repo: null
             Repo-->>App: BookAddResult.NotFound（isbn）
             App-->>User: Snackbar: "No book found for that ISBN."
 
         else 通信エラー / タイムアウト / 例外
-            GBooks--xApi: エラーレスポンス / タイムアウト
+            OpenBD--xApi: エラーレスポンス / タイムアウト
             Api-->>Repo: Exception をスロー
             Repo-->>App: BookAddResult.Error（isbn / message）
             App-->>User: Snackbar: エラーメッセージ
